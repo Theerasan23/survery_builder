@@ -1,0 +1,15 @@
+.claude
+/form_builder/node_modules
+/form_builder/.next
+/form_builder/.env.local
+/form_builder/.env
+
+api/node_modules
+api/.env.local
+api/.env
+api/dist
+api/db/.env
+.env
+.DS_Store
+api/.DS_Store
+form_builder/.DS_Store

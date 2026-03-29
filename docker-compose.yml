@@ -1,0 +1,45 @@
+services:
+  api:
+    container_name: form_api
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      MYSQL_HOST: host.docker.internal
+      MYSQL_USER: ${MYSQL_USER:-admin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-form_db}
+      CORS_ORIGIN: http://localhost:3000
+    volumes:
+      - ./api/public/uploads:/app/public/uploads
+      - ./api/public/uploads:/app/dist/public/uploads
+    networks:
+      - form-network
+
+  form_builder:
+    container_name: form_frontend
+    build:
+      context: ./form_builder
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api}
+        NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3001}
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-my_super_secret_jwt_key_for_nextauth_123}
+      INTERNAL_API_URL: http://form_api:3001/api
+    depends_on:
+      - api
+    networks:
+      - form-network
+
+networks:
+  form-network:
+    driver: bridge
