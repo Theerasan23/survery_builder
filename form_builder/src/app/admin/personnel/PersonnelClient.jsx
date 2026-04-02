@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, Plus, Pencil, Trash2, X, UserCircle, Monitor, Check, Camera, Loader2 } from 'lucide-react';
+import { Users, Plus, Pencil, Trash2, X, UserCircle, Monitor, Camera, Loader2 } from 'lucide-react';
 import ConfirmModal from '@/components/ConfirmModal';
 import useConfirmModal from '@/hooks/useConfirmModal';
 import axios from 'axios';
@@ -15,7 +15,7 @@ function toProxyUrl(url) {
     return url.replace(/^\/uploads\//, '/api/uploads/');
 }
 
-const EMPTY_FORM = { first_name: '', last_name: '', position: '', department: '', photo_url: '', device_ids: [] };
+const EMPTY_FORM = { first_name: '', last_name: '', position: '', department: '', photo_url: '', device_ids: [], all_devices: false };
 
 function PersonnelAvatar({ photo_url, first_name, last_name, size = 'md' }) {
     const sizeClass = size === 'lg' ? 'w-20 h-20 text-2xl' : size === 'sm' ? 'w-8 h-8 text-xs' : 'w-9 h-9 text-sm';
@@ -69,12 +69,13 @@ export default function PersonnelClient() {
     const openEdit = (p) => {
         setEditing(p.id);
         setFormData({
-            first_name: p.first_name,
-            last_name:  p.last_name,
-            position:   p.position   || '',
-            department: p.department || '',
-            photo_url:  p.photo_url  || '',
-            device_ids: p.device_ids || [],
+            first_name:  p.first_name,
+            last_name:   p.last_name,
+            position:    p.position   || '',
+            department:  p.department || '',
+            photo_url:   p.photo_url  || '',
+            device_ids:  p.device_ids || [],
+            all_devices: p.all_devices || false,
         });
         setModal(true);
     };
@@ -97,13 +98,14 @@ export default function PersonnelClient() {
         }
     };
 
-    const toggleDevice = (deviceId) => {
-        setFormData(prev => {
-            const ids = prev.device_ids.includes(deviceId)
-                ? prev.device_ids.filter(id => id !== deviceId)
-                : [...prev.device_ids, deviceId];
-            return { ...prev, device_ids: ids };
-        });
+    const handleDeviceSelect = (value) => {
+        if (value === 'all') {
+            setFormData(prev => ({ ...prev, all_devices: true, device_ids: [] }));
+        } else if (value === '') {
+            setFormData(prev => ({ ...prev, all_devices: false, device_ids: [] }));
+        } else {
+            setFormData(prev => ({ ...prev, all_devices: false, device_ids: [value] }));
+        }
     };
 
     const handleSave = async (e) => {
@@ -113,12 +115,13 @@ export default function PersonnelClient() {
         setSaving(true);
         try {
             const payload = {
-                first_name:  formData.first_name,
-                last_name:   formData.last_name,
-                position:    formData.position   || null,
-                department:  formData.department || null,
-                photo_url:   formData.photo_url  || null,
-                device_ids:  formData.device_ids,
+                first_name:   formData.first_name,
+                last_name:    formData.last_name,
+                position:     formData.position   || null,
+                department:   formData.department || null,
+                photo_url:    formData.photo_url  || null,
+                device_ids:   formData.device_ids,
+                all_devices:  formData.all_devices,
             };
             if (editing) {
                 await axios.put(`${API}/personnel/${editing}`, payload);
@@ -210,7 +213,12 @@ export default function PersonnelClient() {
                                         <td className="px-6 py-4 text-neutral-600 dark:text-neutral-300">{p.position || '—'}</td>
                                         <td className="px-6 py-4 text-neutral-600 dark:text-neutral-300">{p.department || '—'}</td>
                                         <td className="px-6 py-4">
-                                            {p.device_names && p.device_names.length > 0 ? (
+                                            {p.all_devices ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium">
+                                                    <Monitor className="w-3 h-3" />
+                                                    ทุกเครื่อง
+                                                </span>
+                                            ) : p.device_names && p.device_names.length > 0 ? (
                                                 <div className="flex flex-wrap gap-1.5">
                                                     {p.device_names.map((dn, i) => (
                                                         <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#eef1f5] dark:bg-[#21304A]/10 text-[#21304A] dark:text-[#a1afc5] text-xs font-medium">
@@ -367,56 +375,33 @@ export default function PersonnelClient() {
                                 />
                             </div>
 
-                            {/* Device multi-select — แสดงเฉพาะตอนแก้ไข */}
-                            {editing && <div>
-                                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                            {/* Device select dropdown */}
+                            <div>
+                                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
                                     Device ที่ประจำ
-                                    {formData.device_ids.length > 0 && (
-                                        <span className="ml-2 px-1.5 py-0.5 bg-[#eef1f5] dark:bg-[#21304A]/20 text-[#21304A] dark:text-[#a1afc5] text-xs font-semibold">
-                                            {formData.device_ids.length} เครื่อง
-                                        </span>
-                                    )}
                                 </label>
                                 {devices.length === 0 ? (
                                     <p className="text-sm text-neutral-400 py-2">ยังไม่มี Device ในระบบ</p>
                                 ) : (
-                                    <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
-                                        {devices.map(d => {
-                                            const checked = formData.device_ids.includes(d.id);
-                                            return (
-                                                <button
-                                                    key={d.id}
-                                                    type="button"
-                                                    onClick={() => toggleDevice(d.id)}
-                                                    className={`flex items-center gap-3 px-3.5 py-2.5 border-2 text-left transition-all duration-150 ${
-                                                        checked
-                                                            ? 'border-[#21304A] dark:border-[#21304A] bg-[#eef1f5] dark:bg-[#21304A]/10'
-                                                            : 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-600'
-                                                    }`}
-                                                >
-                                                    <div className={`w-5 h-5 border-2 flex items-center justify-center shrink-0 transition-colors ${
-                                                        checked
-                                                            ? 'bg-[#21304A] border-[#21304A]'
-                                                            : 'border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700'
-                                                    }`}>
-                                                        {checked && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className={`text-sm font-medium truncate ${checked ? 'text-[#21304A] dark:text-[#a1afc5]' : 'text-neutral-800 dark:text-neutral-200'}`}>
-                                                            {d.name}
-                                                        </p>
-                                                        {d.form_title && (
-                                                            <p className="text-xs text-neutral-400 truncate">{d.form_title}</p>
-                                                        )}
-                                                    </div>
-                                                    <Monitor className={`w-4 h-4 shrink-0 ${checked ? 'text-[#a1afc5]' : 'text-neutral-300 dark:text-neutral-600'}`} />
-                                                </button>
-                                            );
-                                        })}
+                                    <div className="relative">
+                                        <select
+                                            value={formData.all_devices ? 'all' : (formData.device_ids[0] || '')}
+                                            onChange={e => handleDeviceSelect(e.target.value)}
+                                            className="w-full px-3.5 py-2.5 border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm focus:ring-2 focus:ring-[#21304A] focus:border-transparent outline-none transition appearance-none pr-10"
+                                        >
+                                            <option value="">— ไม่เลือก —</option>
+                                            <option value="all">ทุกเครื่อง</option>
+                                            {devices.map(d => (
+                                                <option key={d.id} value={d.id}>
+                                                    {d.name}{d.form_title ? ` (${d.form_title})` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <Monitor className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
                                     </div>
                                 )}
-                                <p className="text-xs text-neutral-400 mt-1.5">เลือกได้หลาย Device — บุคลากรจะปรากฏใน dropdown ของแต่ละ Device</p>
-                            </div>}
+                                <p className="text-xs text-neutral-400 mt-1.5">เลือก "ทุกเครื่อง" เพื่อให้บุคลากรปรากฏใน dropdown ของทุก Device</p>
+                            </div>
 
                             <div className="flex items-center gap-3 pt-2">
                                 <button
