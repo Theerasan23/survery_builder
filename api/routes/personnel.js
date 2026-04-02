@@ -2,6 +2,22 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 
+// Ensure all_devices column exists in personnel table
+(async () => {
+    try {
+        const [rows] = await pool.query(
+            `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'personnel' AND COLUMN_NAME = 'all_devices'`
+        );
+        if (rows[0].cnt === 0) {
+            await pool.query(`ALTER TABLE personnel ADD COLUMN all_devices TINYINT(1) NOT NULL DEFAULT 0`);
+            console.log('Added all_devices column to personnel table');
+        }
+    } catch (e) {
+        console.error('Could not add all_devices column:', e.message);
+    }
+})();
+
 // GET all personnel with their assigned devices
 router.get('/', async (req, res) => {
     try {
@@ -18,11 +34,11 @@ router.get('/', async (req, res) => {
         // Parse device_ids into array
         const result = rows.map(p => ({
             ...p,
-            device_ids:   p.device_ids   ? p.device_ids.split(',')   : [],
-            device_names: p.device_names ? p.device_names.split(',') : [],
-            // Keep backward compat: first device
+            all_devices:  !!p.all_devices,
+            device_ids:   p.all_devices ? [] : (p.device_ids   ? p.device_ids.split(',')   : []),
+            device_names: p.all_devices ? ['ทุกเครื่อง'] : (p.device_names ? p.device_names.split(',') : []),
             device_id:   p.device_ids   ? p.device_ids.split(',')[0]   : null,
-            device_name: p.device_names ? p.device_names.split(',')[0] : null,
+            device_name: p.all_devices ? 'ทุกเครื่อง' : (p.device_names ? p.device_names.split(',')[0] : null),
         }));
         res.json(result);
     } catch (error) {
@@ -198,10 +214,11 @@ router.get('/:id', async (req, res) => {
         const p = rows[0];
         res.json({
             ...p,
-            device_ids:   p.device_ids   ? p.device_ids.split(',')   : [],
-            device_names: p.device_names ? p.device_names.split(',') : [],
+            all_devices:  !!p.all_devices,
+            device_ids:   p.all_devices ? [] : (p.device_ids   ? p.device_ids.split(',')   : []),
+            device_names: p.all_devices ? ['ทุกเครื่อง'] : (p.device_names ? p.device_names.split(',') : []),
             device_id:   p.device_ids   ? p.device_ids.split(',')[0]   : null,
-            device_name: p.device_names ? p.device_names.split(',')[0] : null,
+            device_name: p.all_devices ? 'ทุกเครื่อง' : (p.device_names ? p.device_names.split(',')[0] : null),
         });
     } catch (error) {
         console.error('Error fetching personnel:', error);
@@ -220,7 +237,7 @@ async function syncDevices(connection, personnelId, deviceIds) {
 
 // POST create personnel
 router.post('/', async (req, res) => {
-    const { first_name, last_name, position, department, photo_url, device_ids } = req.body;
+    const { first_name, last_name, position, department, photo_url, device_ids, all_devices } = req.body;
     if (!first_name || !last_name) {
         return res.status(400).json({ error: 'first_name and last_name are required' });
     }
@@ -228,11 +245,13 @@ router.post('/', async (req, res) => {
     try {
         await connection.beginTransaction();
         const [result] = await connection.query(
-            'INSERT INTO personnel (first_name, last_name, position, department, photo_url) VALUES (?, ?, ?, ?, ?)',
-            [first_name, last_name, position || null, department || null, photo_url || null]
+            'INSERT INTO personnel (first_name, last_name, position, department, photo_url, all_devices) VALUES (?, ?, ?, ?, ?, ?)',
+            [first_name, last_name, position || null, department || null, photo_url || null, all_devices ? 1 : 0]
         );
         const newId = result.insertId;
-        await syncDevices(connection, newId, device_ids || []);
+        if (!all_devices) {
+            await syncDevices(connection, newId, device_ids || []);
+        }
         await connection.commit();
         res.status(201).json({ id: newId, message: 'Personnel created' });
     } catch (error) {
@@ -246,20 +265,25 @@ router.post('/', async (req, res) => {
 
 // PUT update personnel
 router.put('/:id', async (req, res) => {
-    const { first_name, last_name, position, department, photo_url, device_ids } = req.body;
+    const { first_name, last_name, position, department, photo_url, device_ids, all_devices } = req.body;
     const personnelId = req.params.id;
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
         const [result] = await connection.query(
-            'UPDATE personnel SET first_name = ?, last_name = ?, position = ?, department = ?, photo_url = ? WHERE id = ?',
-            [first_name, last_name, position || null, department || null, photo_url || null, personnelId]
+            'UPDATE personnel SET first_name = ?, last_name = ?, position = ?, department = ?, photo_url = ?, all_devices = ? WHERE id = ?',
+            [first_name, last_name, position || null, department || null, photo_url || null, all_devices ? 1 : 0, personnelId]
         );
         if (result.affectedRows === 0) {
             await connection.rollback();
             return res.status(404).json({ error: 'Personnel not found' });
         }
-        await syncDevices(connection, personnelId, device_ids || []);
+        if (all_devices) {
+            // Clear device_personnel rows when all_devices is set
+            await connection.query('DELETE FROM device_personnel WHERE personnel_id = ?', [personnelId]);
+        } else {
+            await syncDevices(connection, personnelId, device_ids || []);
+        }
         await connection.commit();
         res.json({ message: 'Personnel updated' });
     } catch (error) {

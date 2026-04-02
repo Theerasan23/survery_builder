@@ -74,10 +74,28 @@ router.get('/', async (req, res) => {
             personnelByDevice[r.device_id].push({ id: r.personnel_id, name: r.name, position: r.position });
         });
 
-        const result = rows.map(d => ({
-            ...d,
-            assigned_personnel: personnelByDevice[d.id] || []
-        }));
+        // Fetch personnel with all_devices=1 (they appear in every device)
+        const [allDevicesPersonnel] = await pool.query(`
+            SELECT id AS personnel_id,
+                   CONCAT(first_name,' ',last_name) AS name,
+                   position
+            FROM personnel
+            WHERE all_devices = 1
+            ORDER BY first_name
+        `);
+
+        const result = rows.map(d => {
+            const assigned = personnelByDevice[d.id] || [];
+            // Merge all_devices personnel, avoiding duplicates
+            const assignedIds = new Set(assigned.map(p => p.id));
+            const merged = [...assigned];
+            allDevicesPersonnel.forEach(p => {
+                if (!assignedIds.has(p.personnel_id)) {
+                    merged.push({ id: p.personnel_id, name: p.name, position: p.position });
+                }
+            });
+            return { ...d, assigned_personnel: merged };
+        });
         res.json(result);
     } catch (error) {
         console.error('Error fetching devices:', error);

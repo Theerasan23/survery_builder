@@ -13,3 +13,5 @@ api/db/.env
 .DS_Store
 api/.DS_Store
 form_builder/.DS_Store
+
+nginx.conf

@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 import { CheckCircle, XCircle, Loader2, Phone, Star, ChevronRight } from 'lucide-react';
-import ConfirmModal from '@/components/ConfirmModal';
-import useConfirmModal from '@/hooks/useConfirmModal';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL;
 
@@ -36,7 +34,6 @@ export default function PersonalFormClient({ deviceId }) {
     const [submitting, setSubmitting] = useState(false);
     const [error, setError]     = useState(null);
     const submittedRef = useRef(false);
-    const { confirm, modalProps: confirmModalProps } = useConfirmModal();
 
     const fetchDevice = useCallback(async () => {
         try {
@@ -143,32 +140,26 @@ export default function PersonalFormClient({ deviceId }) {
         return qs.sort((a, b) => a.order_index - b.order_index);
     }, [form]);
 
-    const handleAnswer = (questionId, value, type) => {
-        setAnswers(prev => ({ ...prev, [questionId]: { value, type } }));
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (submittedRef.current || submitting) return;
-
+    // Check if all required questions are answered
+    const allRequiredAnswered = useCallback((currentAnswers) => {
         const questions = getAllQuestions();
-        const required = questions.filter(q => {
-            if (!q.is_required) return false;
-            const ans = answers[q.id];
-            if (ans === undefined) return true;
-            if (q.type === 'multiple_choice' && Array.isArray(ans.value) && ans.value.length === 0) return true;
-            if ((q.type === 'text' || q.type === 'short_text') && typeof ans.value === 'string' && !ans.value.trim()) return true;
-            return false;
+        return questions.every(q => {
+            if (!q.is_required) return true;
+            const ans = currentAnswers[q.id];
+            if (ans === undefined) return false;
+            if (q.type === 'multiple_choice' && Array.isArray(ans.value) && ans.value.length === 0) return false;
+            if ((q.type === 'text' || q.type === 'short_text') && typeof ans.value === 'string' && !ans.value.trim()) return false;
+            return true;
         });
-        if (required.length > 0) { alert(`กรุณาตอบคำถามที่จำเป็น (${required.length} ข้อ)`); return; }
+    }, [getAllQuestions]);
 
-        const ok = await confirm({ variant: 'submit', message: 'ต้องการส่งแบบประเมินนี้ใช่หรือไม่?' });
-        if (!ok) return;
-
+    // Auto-submit without confirmation
+    const doSubmit = useCallback(async (currentAnswers) => {
+        if (submittedRef.current || submitting) return;
         setSubmitting(true);
         submittedRef.current = true;
         try {
-            const answersPayload = Object.entries(answers).flatMap(([qId, ans]) => {
+            const answersPayload = Object.entries(currentAnswers).flatMap(([qId, ans]) => {
                 const base = { question_id: parseInt(qId) };
                 if (ans.type === 'rating') return [{ ...base, answer_numeric: ans.value }];
                 if (ans.type === 'text') return [{ ...base, answer_text: ans.value }];
@@ -191,6 +182,36 @@ export default function PersonalFormClient({ deviceId }) {
         } finally {
             setSubmitting(false);
         }
+    }, [submitting, isPersonnelForm, form, deviceId]);
+
+    const handleAnswer = (questionId, value, type) => {
+        setAnswers(prev => {
+            const updated = { ...prev, [questionId]: { value, type } };
+            // Auto-submit when all required questions are answered
+            if (allRequiredAnswered(updated)) {
+                // Use setTimeout to let state update render first
+                setTimeout(() => doSubmit(updated), 300);
+            }
+            return updated;
+        });
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (submittedRef.current || submitting) return;
+
+        const questions = getAllQuestions();
+        const required = questions.filter(q => {
+            if (!q.is_required) return false;
+            const ans = answers[q.id];
+            if (ans === undefined) return true;
+            if (q.type === 'multiple_choice' && Array.isArray(ans.value) && ans.value.length === 0) return true;
+            if ((q.type === 'text' || q.type === 'short_text') && typeof ans.value === 'string' && !ans.value.trim()) return true;
+            return false;
+        });
+        if (required.length > 0) { alert(`กรุณาตอบคำถามที่จำเป็น (${required.length} ข้อ)`); return; }
+
+        await doSubmit(answers);
     };
 
     // ── Loading ──
@@ -475,7 +496,6 @@ export default function PersonalFormClient({ deviceId }) {
                 </button>
 
             </form>
-            <ConfirmModal {...confirmModalProps} />
         </div>
     );
 }
