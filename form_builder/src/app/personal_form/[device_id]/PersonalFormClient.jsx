@@ -9,10 +9,10 @@ const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL;
 
 const SATISFACTION_LEVELS = [
     { value: 5, label: 'ดีเยี่ยม', emoji: '😄', color: 'emerald', bg: 'bg-emerald-50 dark:bg-emerald-500/10', border: 'border-emerald-300 dark:border-emerald-600', text: 'text-emerald-700 dark:text-emerald-400', ring: 'ring-emerald-400' },
-    { value: 4, label: 'ดี',        emoji: '🙂', color: 'blue',    bg: 'bg-blue-50 dark:bg-blue-500/10',       border: 'border-blue-300 dark:border-blue-600',       text: 'text-blue-700 dark:text-blue-400',       ring: 'ring-blue-400' },
-    { value: 3, label: 'ปานกลาง',  emoji: '😐', color: 'amber',   bg: 'bg-amber-50 dark:bg-amber-500/10',     border: 'border-amber-300 dark:border-amber-600',     text: 'text-amber-700 dark:text-amber-400',     ring: 'ring-amber-400' },
-    { value: 2, label: 'น้อย',     emoji: '😕', color: 'orange',  bg: 'bg-orange-50 dark:bg-orange-500/10',   border: 'border-orange-300 dark:border-orange-600',   text: 'text-orange-700 dark:text-orange-400',   ring: 'ring-orange-400' },
-    { value: 1, label: 'น้อยมาก', emoji: '😞', color: 'red',     bg: 'bg-red-50 dark:bg-red-500/10',         border: 'border-red-300 dark:border-red-600',         text: 'text-red-700 dark:text-red-400',         ring: 'ring-red-400' },
+    { value: 4, label: 'ดี', emoji: '🙂', color: 'blue', bg: 'bg-blue-50 dark:bg-blue-500/10', border: 'border-blue-300 dark:border-blue-600', text: 'text-blue-700 dark:text-blue-400', ring: 'ring-blue-400' },
+    { value: 3, label: 'ปานกลาง', emoji: '😐', color: 'amber', bg: 'bg-amber-50 dark:bg-amber-500/10', border: 'border-amber-300 dark:border-amber-600', text: 'text-amber-700 dark:text-amber-400', ring: 'ring-amber-400' },
+    { value: 2, label: 'น้อย', emoji: '😕', color: 'orange', bg: 'bg-orange-50 dark:bg-orange-500/10', border: 'border-orange-300 dark:border-orange-600', text: 'text-orange-700 dark:text-orange-400', ring: 'ring-orange-400' },
+    { value: 1, label: 'น้อยมาก', emoji: '😞', color: 'red', bg: 'bg-red-50 dark:bg-red-500/10', border: 'border-red-300 dark:border-red-600', text: 'text-red-700 dark:text-red-400', ring: 'ring-red-400' },
 ];
 
 function imgUrl(url) {
@@ -24,15 +24,15 @@ function imgUrl(url) {
 }
 
 export default function PersonalFormClient({ deviceId }) {
-    const [device, setDevice]       = useState(null);
-    const [org, setOrg]             = useState(null);
-    const [form, setForm]           = useState(null);
+    const [device, setDevice] = useState(null);
+    const [org, setOrg] = useState(null);
+    const [form, setForm] = useState(null);
     const [isPersonnelForm, setIsPersonnelForm] = useState(false);
-    const [loading, setLoading]     = useState(true);
-    const [stage, setStage]     = useState('landing'); // 'landing' | 'form' | 'submitted'
+    const [loading, setLoading] = useState(true);
+    const [stage, setStage] = useState('landing'); // 'landing' | 'form' | 'submitted'
     const [answers, setAnswers] = useState({});
     const [submitting, setSubmitting] = useState(false);
-    const [error, setError]     = useState(null);
+    const [error, setError] = useState(null);
     const submittedRef = useRef(false);
 
     const fetchDevice = useCallback(async () => {
@@ -46,7 +46,7 @@ export default function PersonalFormClient({ deviceId }) {
             setOrg(oRes.data);
 
             if (d.status === 'open') {
-                axios.patch(`/api/devices/${deviceId}/ping`).catch(() => {});
+                axios.patch(`/api/devices/${deviceId}/ping`).catch(() => { });
                 if (d.personnel_form_id) {
                     const fRes = await axios.get(`/api/personnel-forms/${d.personnel_form_uuid || d.personnel_form_id}`);
                     setForm(fRes.data);
@@ -83,7 +83,7 @@ export default function PersonalFormClient({ deviceId }) {
                     setStage('landing');
                     setAnswers({});
                     submittedRef.current = false;
-                    axios.patch(`/api/devices/${deviceId}/ping`).catch(() => {});
+                    axios.patch(`/api/devices/${deviceId}/ping`).catch(() => { });
                     if (d.personnel_form_id) {
                         const fRes = await axios.get(`/api/personnel-forms/${d.personnel_form_uuid || d.personnel_form_id}`);
                         setForm(fRes.data);
@@ -239,7 +239,7 @@ export default function PersonalFormClient({ deviceId }) {
                 <h1 className="text-2xl font-bold text-white mb-2">ยังไม่เปิดรับการประเมิน</h1>
                 <p className="text-teal-300 text-sm">กรุณารอสักครู่...</p>
                 <div className="mt-5 flex justify-center gap-1.5">
-                    {[0,150,300].map(d => (
+                    {[0, 150, 300].map(d => (
                         <span key={d} className="w-2.5 h-2.5 rounded-full bg-teal-400/50 animate-bounce" style={{ animationDelay: `${d}ms` }} />
                     ))}
                 </div>
@@ -253,7 +253,7 @@ export default function PersonalFormClient({ deviceId }) {
     // ── Landing Card (full screen) ──
     if (stage === 'landing') {
         const photoSrc = imgUrl(device.personnel_photo_url || device.photo_url);
-        const logoSrc  = imgUrl(org?.logo_url);
+        const logoSrc = imgUrl(org?.logo_url);
         return (
             <div className="h-screen w-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#f0f8ff' }}>
 
@@ -313,7 +313,7 @@ export default function PersonalFormClient({ deviceId }) {
                                 <div className="flex items-center gap-3">
                                     <div className="w-9 h-9 md:w-11 md:h-11 rounded-full bg-green-50 border border-green-100 flex items-center justify-center shrink-0">
                                         <svg viewBox="0 0 24 24" className="w-4 h-4 md:w-5 md:h-5 fill-[#06C755]">
-                                            <path d="M19.952 12.404c0-3.875-3.885-7.031-8.664-7.031S2.624 8.529 2.624 12.404c0 3.475 3.082 6.389 7.241 6.943.282.06.665.186.762.427.087.22.057.566.028.788l-.123.743c-.038.22-.174.859.752.468.926-.391 4.994-2.942 6.815-5.037 1.258-1.38 1.853-2.78 1.853-4.332z"/>
+                                            <path d="M19.952 12.404c0-3.875-3.885-7.031-8.664-7.031S2.624 8.529 2.624 12.404c0 3.475 3.082 6.389 7.241 6.943.282.06.665.186.762.427.087.22.057.566.028.788l-.123.743c-.038.22-.174.859.752.468.926-.391 4.994-2.942 6.815-5.037 1.258-1.38 1.853-2.78 1.853-4.332z" />
                                         </svg>
                                     </div>
                                     <span className="inline-block px-4 md:px-5 py-1.5 md:py-2 rounded-full bg-[#06C755] text-white text-base md:text-xl font-semibold">
@@ -486,14 +486,7 @@ export default function PersonalFormClient({ deviceId }) {
                     );
                 })}
 
-                <button type="submit" disabled={submitting}
-                    className="w-full flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-cyan-400 text-cyan-300 font-bold text-xl hover:bg-cyan-400/10 disabled:opacity-60 active:scale-[0.98] transition-all mt-8"
-                >
-                    {submitting
-                        ? <><Loader2 className="w-6 h-6 animate-spin" /> กำลังส่ง...</>
-                        : <><CheckCircle className="w-6 h-6" /> ส่งแบบประเมิน</>
-                    }
-                </button>
+
 
             </form>
         </div>
