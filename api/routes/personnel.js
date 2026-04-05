@@ -54,7 +54,7 @@ router.get('/report', async (req, res) => {
         const params = [from || null, from || null, to || null, to || null];
         const [rows] = await pool.query(`
             SELECT
-                p.id, p.first_name, p.last_name, p.position, p.department,
+                p.id, p.first_name, p.last_name, p.position, p.department, p.all_devices,
                 GROUP_CONCAT(DISTINCT d.name ORDER BY d.name SEPARATOR ', ') AS device_name,
                 COUNT(DISTINCT r.id) AS response_count,
                 ROUND(AVG(a.answer_numeric), 2) AS avg_score

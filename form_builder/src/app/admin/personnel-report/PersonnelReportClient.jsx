@@ -256,7 +256,12 @@ export default function PersonnelReportClient() {
                                         </td>
                                         <td className="px-6 py-4 text-neutral-600 dark:text-neutral-300">{p.position || '—'}</td>
                                         <td className="px-6 py-4">
-                                            {p.device_name ? (
+                                            {p.all_devices ? (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium">
+                                                    <Monitor className="w-3 h-3" />
+                                                    ทุกเครื่อง
+                                                </span>
+                                            ) : p.device_name ? (
                                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#eef1f5] dark:bg-[#21304A]/10 text-[#21304A] dark:text-[#a1afc5] text-xs font-medium">
                                                     <Monitor className="w-3 h-3" />
                                                     {p.device_name}
