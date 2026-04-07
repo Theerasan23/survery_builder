@@ -92,10 +92,14 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
             Object.entries(answers).forEach(([qIdStr, value]) => {
                 const isGridStr = qIdStr.includes('-');
                 const qId = parseInt(isGridStr ? qIdStr.split('-')[0] : qIdStr);
-                const optId = isGridStr ? parseInt(qIdStr.split('-')[1]) : null;
+                const suffix = isGridStr ? qIdStr.split('-')[1] : null;
+                const optId = isGridStr ? parseInt(suffix) : null;
 
                 const foundQ = questionMap[qId] ?? null;
                 const qType = foundQ?.type ?? 'text';
+
+                // organization stores its detail under `${qId}-detail`; combined into the main answer below
+                if (qType === 'organization' && suffix === 'detail') return;
 
                 if (qType === 'choice_suggestion' && isGridStr) {
                     const isPositive = value === 'positive';
@@ -144,8 +148,10 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                 } else if (qType === 'gender') {
                     formattedAnswers.push({ question_id: qId, answer_text: value });
                 } else if (qType === 'organization') {
-                    const detail = value ? ` | ${value}` : '';
-                    formattedAnswers.push({ question_id: qId, answer_text: `สำนักงานสาธารณสุขจังหวัดนนทบุรี${detail}` });
+                    const orgName = (value || '').trim();
+                    const detail = (answers[`${qId}-detail`] || '').trim();
+                    const detailPart = detail ? ` | ${detail}` : '';
+                    formattedAnswers.push({ question_id: qId, answer_text: `${orgName}${detailPart}` });
                 } else {
                     // short_text / long_text — if question has a score assigned, include it
                     const qScore = foundQ?.score != null ? parseFloat(foundQ.score) : undefined;
@@ -290,11 +296,11 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                     </div>
 
                     {q.image_url && q.type !== 'choice_suggestion' && (
-                        <div className="rounded-xl overflow-hidden border border-neutral-200 dark:border-neutral-700">
+                        <div className="flex justify-center rounded-xl overflow-hidden border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900">
                             <img
-                                src={q.image_url.startsWith('http') ? q.image_url : `${process.env.NEXT_PUBLIC_SOCKET_URL}${q.image_url}`}
+                                src={q.image_url.startsWith('http') || q.image_url.startsWith('/api/') ? q.image_url : `${process.env.NEXT_PUBLIC_SOCKET_URL}${q.image_url}`}
                                 alt="question media"
-                                className="w-full h-auto object-cover max-h-64"
+                                className="max-w-full max-h-80 w-auto h-auto object-contain"
                             />
                         </div>
                     )}
@@ -566,16 +572,20 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                             <div className="space-y-3">
                                 <div>
                                     <p className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 mb-1.5">หน่วยงาน</p>
-                                    <div className="w-full px-3 py-2.5 rounded border border-neutral-200 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800/60 text-sm text-neutral-500 dark:text-neutral-400 font-medium cursor-not-allowed select-none">
-                                        สำนักงานสาธารณสุขจังหวัดนนทบุรี
-                                    </div>
+                                    <input
+                                        type="text"
+                                        value={answers[q.id] ?? ''}
+                                        onChange={e => handleAnswerChange(q.id, e.target.value)}
+                                        className="w-full px-3 py-2.5 rounded border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent bg-neutral-50 dark:bg-neutral-800 dark:text-white placeholder-neutral-400 transition-all text-sm"
+                                        placeholder="ระบุชื่อหน่วยงานของท่าน..."
+                                    />
                                 </div>
                                 <div>
                                     <p className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 mb-1.5">กลุ่มงาน / ฝ่าย / รายละเอียดเพิ่มเติม</p>
                                     <input
                                         type="text"
-                                        value={val}
-                                        onChange={e => handleAnswerChange(q.id, e.target.value)}
+                                        value={answers[`${q.id}-detail`] ?? ''}
+                                        onChange={e => handleAnswerChange(`${q.id}-detail`, e.target.value)}
                                         className="w-full px-3 py-2.5 rounded border border-neutral-200 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent bg-neutral-50 dark:bg-neutral-800 dark:text-white placeholder-neutral-400 transition-all text-sm"
                                         placeholder="ระบุกลุ่มงาน หรือฝ่ายของท่าน..."
                                     />

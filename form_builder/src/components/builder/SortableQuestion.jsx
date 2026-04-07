@@ -1,8 +1,8 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Trash2, Image as ImageIcon, Database, Star, AlignLeft, AlignJustify, CheckSquare, Circle, ChevronDown, Grid3x3, Plus, Users, BookOpen, Building2, Heading, MessageSquarePlus, Lightbulb } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
-import { getOptionSets } from '@/lib/actions';
+import { GripVertical, Trash2, Image as ImageIcon, Database, Star, AlignLeft, AlignJustify, CheckSquare, Circle, ChevronDown, Grid3x3, Plus, Users, BookOpen, Building2, Heading, MessageSquarePlus, Lightbulb, X, Upload } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { getOptionSets, uploadImage } from '@/lib/actions';
 
 
 const TYPE_CONFIG = {
@@ -44,6 +44,33 @@ export default function SortableQuestion({ question, questionIndex, updateQuesti
 
     const [optionSets, setOptionSets] = useState([]);
     const [loadingSets, setLoadingSets] = useState(false);
+    const [uploadingImage, setUploadingImage] = useState(false);
+    const fileInputRef = useRef(null);
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            alert('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
+        setUploadingImage(true);
+        try {
+            const fd = new FormData();
+            fd.append('image', file);
+            const result = await uploadImage(fd);
+            if (!result?.ok) throw new Error('Upload failed');
+            updateQuestion(question.id, 'image_url', `/api${result.data.url}`);
+        } catch (err) {
+            alert('อัปโหลดรูปไม่สำเร็จ: ' + (err?.message || 'unknown error'));
+        } finally {
+            setUploadingImage(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const removeImage = () => updateQuestion(question.id, 'image_url', null);
 
     const fetchOptionSets = useCallback(async () => {
         try {
@@ -235,20 +262,20 @@ export default function SortableQuestion({ question, questionIndex, updateQuesti
                     </div>
                     <div className="space-y-2 px-4 py-3 bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-100 dark:border-cyan-500/20">
                         <div>
-                            <p className="text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider mb-1">หน่วยงาน (กรอกอัตโนมัติ)</p>
-                            <div className="w-full px-3 py-2 bg-neutral-100 dark:bg-neutral-700/60 border border-neutral-200 dark:border-neutral-600 text-xs text-neutral-500 dark:text-neutral-400 font-medium cursor-not-allowed">
-                                สำนักงานสาธารณสุขจังหวัดนนทบุรี
+                            <p className="text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider mb-1">หน่วยงาน</p>
+                            <div className="w-full px-3 py-2 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-600 rounded-none text-xs text-neutral-400 italic">
+                                ระบุชื่อหน่วยงานของท่าน...
                             </div>
                         </div>
                         <div>
                             <p className="text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider mb-1">กลุ่มงาน / ฝ่าย / รายละเอียดเพิ่มเติม</p>
                             <div className="w-full px-3 py-2 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-600 rounded-none text-xs text-neutral-400 italic">
-                                พิมพ์กลุ่มงานหรือฝ่ายของท่าน...
+                                ระบุกลุ่มงานหรือฝ่ายของท่าน...
                             </div>
                         </div>
                     </div>
                     <p className="text-[11px] text-neutral-400 mt-2 pl-1">
-                        ช่อง &ldquo;หน่วยงาน&rdquo; จะกรอกให้อัตโนมัติ ผู้ตอบเพิ่มรายละเอียดได้ในช่องที่สอง
+                        ผู้ตอบกรอกชื่อหน่วยงานและกลุ่มงาน/ฝ่ายเอง (มีค่าเริ่มต้นจาก System Settings ให้แก้ไขได้)
                     </p>
                 </div>
             )}
@@ -485,16 +512,38 @@ export default function SortableQuestion({ question, questionIndex, updateQuesti
                     )}
 
                     {!isRatingGrid && !isGender && !isOrganization && question.type !== 'choice_suggestion' && (
-                        <button
-                            className={`flex items-center gap-1 text-xs font-medium transition-colors ${question.image_url ? 'text-[#21304A] hover:text-[#2d4060]' : 'text-neutral-400 hover:text-[#21304A]'}`}
-                            onClick={() => {
-                                const url = prompt('ใส่ URL รูปภาพ:');
-                                if (url) updateQuestion(question.id, 'image_url', url);
-                            }}
-                        >
-                            <ImageIcon className="w-3 h-3" />
-                            {question.image_url ? 'เปลี่ยนรูป' : 'เพิ่มรูป'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="file"
+                                accept="image/*"
+                                ref={fileInputRef}
+                                onChange={handleImageUpload}
+                                className="hidden"
+                            />
+                            <button
+                                type="button"
+                                disabled={uploadingImage}
+                                className={`flex items-center gap-1 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${question.image_url ? 'text-[#21304A] hover:text-[#2d4060]' : 'text-neutral-400 hover:text-[#21304A]'}`}
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                {uploadingImage
+                                    ? <Upload className="w-3 h-3 animate-pulse" />
+                                    : <ImageIcon className="w-3 h-3" />}
+                                {uploadingImage
+                                    ? 'กำลังอัปโหลด...'
+                                    : (question.image_url ? 'เปลี่ยนรูป' : 'เพิ่มรูป')}
+                            </button>
+                            {question.image_url && !uploadingImage && (
+                                <button
+                                    type="button"
+                                    onClick={removeImage}
+                                    className="flex items-center text-xs text-neutral-400 hover:text-red-500 transition-colors"
+                                    title="ลบรูป"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            )}
+                        </div>
                     )}
                     {question.type === 'choice_suggestion' && (
                         <input
