@@ -21,7 +21,11 @@ const TYPE_CONFIG = {
 };
 
 const RATING_LABELS = ['น้อยที่สุด', 'น้อย', 'ปานกลาง', 'มาก', 'มากที่สุด'];
-const QUIZ_LABELS = ['A', 'B', 'C', 'D'];
+const QUIZ_LABEL_STYLES = {
+    abc:  ['A', 'B', 'C', 'D'],
+    thai: ['ก', 'ข', 'ค', 'ง'],
+    num:  ['1', '2', '3', '4'],
+};
 
 // Single source of truth for type options — used by both desktop and mobile selectors
 const QUESTION_TYPE_OPTIONS = [
@@ -92,7 +96,7 @@ export default function SortableQuestion({ question, questionIndex, updateQuesti
         }
         // Auto-initialize quiz options to 4 empty choices
         if (question.type === 'quiz' && (!question.options || question.options.length === 0)) {
-            updateQuestion(question.id, 'options', ['', '', '', '']);
+            updateQuestion(question.id, 'options', [{ text: '', score: null }, { text: '', score: null }, { text: '', score: null }, { text: '', score: null }]);
         }
     }, [question.type]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -281,15 +285,34 @@ export default function SortableQuestion({ question, questionIndex, updateQuesti
             )}
 
             {/* ── QUIZ: 4 labeled options ── */}
-            {isQuiz && (
+            {isQuiz && (() => {
+                const style = question.quiz_label_style || 'abc';
+                const labels = QUIZ_LABEL_STYLES[style] || QUIZ_LABEL_STYLES.abc;
+                return (
                 <div className="px-4 py-3 space-y-2">
                     <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">ตัวเลือก A–D</span>
+                        <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">ตัวเลือก {labels[0]}–{labels[3]}</span>
+                        <select
+                            value={style}
+                            onChange={(e) => updateQuestion(question.id, 'quiz_label_style', e.target.value)}
+                            className="ml-auto px-2 py-1 text-xs bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/30 text-orange-700 dark:text-orange-400 font-semibold rounded-none outline-none focus:ring-2 focus:ring-orange-400 cursor-pointer"
+                        >
+                            <option value="abc">A B C D</option>
+                            <option value="thai">ก ข ค ง</option>
+                            <option value="num">1 2 3 4</option>
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-2 px-1 pb-0.5">
+                        <div className="w-7 flex-shrink-0" />
+                        <span className="flex-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">ตัวเลือก</span>
+                        <span className="w-20 text-center text-[10px] font-semibold text-amber-500 uppercase tracking-wider">คะแนน</span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {QUIZ_LABELS.map((label, idx) => {
+                        {labels.map((label, idx) => {
                             const opts = question.options || ['', '', '', ''];
                             const val = opts[idx];
+                            const textVal = typeof val === 'object' ? (val?.text || '') : (val || '');
+                            const scoreVal = typeof val === 'object' ? (val?.score ?? '') : '';
                             return (
                                 <div key={label} className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 hover:border-orange-300 dark:hover:border-orange-700 transition-colors">
                                     <span className="flex-shrink-0 w-7 h-7 bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 text-xs font-black flex items-center justify-center">
@@ -297,24 +320,32 @@ export default function SortableQuestion({ question, questionIndex, updateQuesti
                                     </span>
                                     <input
                                         type="text"
-                                        value={typeof val === 'object' ? (val?.text || '') : (val || '')}
-                                        onChange={(e) => {
-                                            const newOpts = [...(question.options || ['', '', '', ''])];
-                                            newOpts[idx] = e.target.value;
-                                            updateQuestion(question.id, 'options', newOpts);
-                                        }}
+                                        value={textVal}
+                                        onChange={(e) => updateOptionTextAt(idx, e.target.value)}
                                         className="flex-1 bg-transparent border-none outline-none text-xs text-neutral-700 dark:text-neutral-300 font-medium placeholder:text-neutral-300 dark:placeholder:text-neutral-600"
                                         placeholder={`ตัวเลือก ${label}...`}
+                                    />
+                                    <input
+                                        type="number"
+                                        value={scoreVal}
+                                        onChange={(e) => updateOptionScoreAt(idx, e.target.value)}
+                                        className="w-20 px-2 py-0.5 text-xs text-center font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-none outline-none focus:border-amber-400 dark:focus:border-amber-400 placeholder:text-amber-300 dark:placeholder:text-amber-700 transition-colors"
+                                        placeholder="คะแนน"
+                                        step="0.5"
                                     />
                                 </div>
                             );
                         })}
                     </div>
-                    <p className="text-[11px] text-neutral-400 pl-1 pt-1">
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 pl-1">
+                        ช่อง &ldquo;คะแนน&rdquo; ไม่บังคับ — ถ้าไม่ใส่ จะไม่นำมาคิดคะแนน
+                    </p>
+                    <p className="text-[11px] text-neutral-400 pl-1">
                         บนฟอร์มจะแสดงเหมือนข้อสอบ — ผู้ตอบเลือกได้ 1 ข้อ
                     </p>
                 </div>
-            )}
+                );
+            })()}
 
             {/* ── RATING GRID ── */}
             {isRatingGrid && (

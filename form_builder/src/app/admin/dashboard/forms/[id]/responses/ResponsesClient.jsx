@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowLeft, Users, ChevronDown, ChevronUp, Calendar, Star, Grid3x3, AlignLeft, CheckSquare, Circle, BookOpen, MessageSquarePlus } from 'lucide-react';
+import { useState, useMemo, useCallback } from 'react';
+import { ArrowLeft, Users, ChevronDown, ChevronUp, Calendar, Star, Grid3x3, AlignLeft, CheckSquare, Circle, BookOpen, MessageSquarePlus, Download } from 'lucide-react';
 import Link from 'next/link';
+import ExportButton from '@/components/admin/ExportButton';
 
 const TYPE_ICONS = {
     rating: Star, rating_grid: Grid3x3, short_text: AlignLeft,
@@ -16,41 +17,35 @@ const TYPE_COLORS = {
     dropdown: 'text-rose-500', gender: 'text-pink-500', quiz: 'text-orange-500',
     choice_suggestion: 'text-teal-500',
 };
-const ratingColors = { 5: 'bg-emerald-500', 4: 'bg-blue-500', 3: 'bg-amber-400', 2: 'bg-orange-500', 1: 'bg-red-500' };
+const RATING_COLORS = { 5: 'bg-emerald-500', 4: 'bg-blue-500', 3: 'bg-amber-400', 2: 'bg-orange-500', 1: 'bg-red-500' };
+const QUIZ_LABEL_STYLES = { abc: ['A', 'B', 'C', 'D'], thai: ['ก', 'ข', 'ค', 'ง'], num: ['1', '2', '3', '4'] };
 
-export default function ResponsesClient({ id, data, formTitle }) {
-    const [expandedId, setExpandedId] = useState(null);
+// ── Reusable question row component ──
+function QuestionRow({ question, responseAnswers }) {
+    const Icon = TYPE_ICONS[question.type] || AlignLeft;
+    const iconColor = TYPE_COLORS[question.type] || 'text-neutral-400';
+    return (
+        <div className="px-5 py-4 flex gap-4">
+            <div className={`flex-shrink-0 mt-0.5 ${iconColor}`}><Icon className="w-4 h-4" /></div>
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{question.text}</p>
+                <AnswerValue question={question} responseAnswers={responseAnswers} />
+            </div>
+        </div>
+    );
+}
 
-    if (!data) return null;
+// ── Answer value renderer ──
+function AnswerValue({ question, responseAnswers }) {
+    const answers = responseAnswers.filter(a => a.question_id === question.id);
+    if (answers.length === 0) return <span className="text-neutral-400 italic text-sm">ไม่ได้ตอบ</span>;
 
-    const { total, sections, questions, responses } = data;
-
-    const getQuestion = (qid) => questions.find(q => q.id === qid);
-
-    const getRespondentName = (response) => {
-        const shortQ = questions.find(q => q.type === 'short_text');
-        if (!shortQ) return `Response #${response.id}`;
-        const ans = response.answers.find(a => a.question_id === shortQ.id);
-        return ans?.answer_text || `Response #${response.id}`;
-    };
-
-    const getOverallRating = (response) => {
-        const ratingQs = questions.filter(q => q.type === 'rating');
-        if (ratingQs.length === 0) return null;
-        const lastRatingQ = ratingQs[ratingQs.length - 1];
-        const ans = response.answers.find(a => a.question_id === lastRatingQ.id);
-        return ans?.answer_numeric ?? null;
-    };
-
-    const renderAnswerValue = (question, responseAnswers) => {
-        const answers = responseAnswers.filter(a => a.question_id === question.id);
-        if (answers.length === 0) return <span className="text-neutral-400 italic text-sm">ไม่ได้ตอบ</span>;
-
-        if (question.type === 'rating') {
+    switch (question.type) {
+        case 'rating': {
             const val = answers[0].answer_numeric;
             return (
                 <div className="flex items-center gap-1">
-                    {[1,2,3,4,5].map(s => (
+                    {[1, 2, 3, 4, 5].map(s => (
                         <div key={s} className={`w-7 h-7 rounded-none flex items-center justify-center text-xs font-bold
                             ${s <= val ? 'bg-amber-400 text-white' : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-400'}`}>
                             {s}
@@ -61,31 +56,31 @@ export default function ResponsesClient({ id, data, formTitle }) {
             );
         }
 
-        if (question.type === 'rating_grid') {
+        case 'rating_grid':
             return (
                 <div className="overflow-x-auto">
                     <table className="w-full text-xs border-collapse mt-1">
                         <thead>
                             <tr className="bg-neutral-50 dark:bg-neutral-800">
                                 <th className="text-left px-2 py-1.5 text-neutral-500 font-medium border border-neutral-200 dark:border-neutral-700 w-2/3">หัวข้อ</th>
-                                {[5,4,3,2,1].map(s => (
+                                {[5, 4, 3, 2, 1].map(s => (
                                     <th key={s} className="px-2 py-1.5 text-center font-bold text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 w-10">{s}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
-                            {question.options.map(opt => {
-                                const ans = answers.find(a => a.option_id === opt.id);
-                                const score = ans?.answer_numeric;
+                            {(question.options || []).map(opt => {
+                                const matched = answers.find(a => a.option_id === opt.id);
+                                const score = matched?.answer_numeric;
                                 return (
                                     <tr key={opt.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30">
                                         <td className="px-2 py-1.5 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700">{opt.text}</td>
-                                        {[5,4,3,2,1].map(s => (
+                                        {[5, 4, 3, 2, 1].map(s => (
                                             <td key={s} className="px-2 py-1.5 text-center border border-neutral-200 dark:border-neutral-700">
-                                                {score === s
-                                                    ? <span className="inline-flex w-5 h-5 items-center justify-center bg-primary text-white rounded-none text-[10px] font-bold mx-auto">{s}</span>
-                                                    : <span className="inline-flex w-5 h-5 items-center justify-center rounded-none border border-neutral-200 dark:border-neutral-600 text-neutral-300 dark:text-neutral-600 mx-auto text-[10px]">{s}</span>
-                                                }
+                                                <span className={`inline-flex w-5 h-5 items-center justify-center rounded-none text-[10px] font-bold mx-auto
+                                                    ${score === s ? 'bg-primary text-white' : 'border border-neutral-200 dark:border-neutral-600 text-neutral-300 dark:text-neutral-600'}`}>
+                                                    {s}
+                                                </span>
                                             </td>
                                         ))}
                                     </tr>
@@ -95,12 +90,11 @@ export default function ResponsesClient({ id, data, formTitle }) {
                     </table>
                 </div>
             );
-        }
 
-        if (question.type === 'multiple_choice') {
+        case 'multiple_choice':
             return (
                 <div className="flex flex-wrap gap-1.5 mt-1">
-                    {question.options.map(opt => {
+                    {(question.options || []).map(opt => {
                         const chosenAns = answers.find(a => a.option_id === opt.id);
                         const chosen = !!chosenAns;
                         return (
@@ -122,14 +116,13 @@ export default function ResponsesClient({ id, data, formTitle }) {
                     })}
                 </div>
             );
-        }
 
-        if (question.type === 'single_choice') {
+        case 'single_choice': {
             const ans = answers[0];
             return (
                 <div className="space-y-1.5 mt-1">
                     <div className="flex flex-wrap gap-1.5">
-                        {question.options.map(opt => {
+                        {(question.options || []).map(opt => {
                             const chosen = ans?.option_id === opt.id;
                             return (
                                 <span key={opt.id} className={`px-2.5 py-1 rounded-none text-xs font-medium border
@@ -152,12 +145,12 @@ export default function ResponsesClient({ id, data, formTitle }) {
             );
         }
 
-        if (question.type === 'dropdown') {
+        case 'dropdown': {
             const ans = answers[0];
             return <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{ans?.option_text || ans?.answer_text || '-'}</span>;
         }
 
-        if (question.type === 'gender') {
+        case 'gender': {
             const val = answers[0]?.answer_text;
             return (
                 <span className={`px-3 py-1 rounded-none text-sm font-semibold ${
@@ -170,12 +163,12 @@ export default function ResponsesClient({ id, data, formTitle }) {
             );
         }
 
-        if (question.type === 'quiz') {
+        case 'quiz': {
             const ans = answers[0];
-            const labels = ['A', 'B', 'C', 'D'];
+            const labels = QUIZ_LABEL_STYLES[question.quiz_label_style] || QUIZ_LABEL_STYLES.abc;
             return (
                 <div className="flex flex-wrap gap-1.5 mt-1">
-                    {question.options.map((opt, idx) => {
+                    {(question.options || []).map((opt, idx) => {
                         const chosen = ans?.option_id === opt.id;
                         return (
                             <span key={opt.id} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-none text-xs font-medium border
@@ -195,23 +188,21 @@ export default function ResponsesClient({ id, data, formTitle }) {
             );
         }
 
-        if (question.type === 'long_text' || question.type === 'short_text') {
+        case 'short_text':
+        case 'long_text': {
             const val = answers[0]?.answer_text;
             if (!val) return <span className="text-neutral-400 italic text-sm">-</span>;
             return <p className="text-sm text-neutral-700 dark:text-neutral-200 leading-relaxed whitespace-pre-wrap">{val}</p>;
         }
 
-        if (question.type === 'choice_suggestion') {
-            // suggestion label stored in image_url field of the question
+        case 'choice_suggestion': {
             const suggLabel = question.image_url || 'ข้อเสนอเพื่อปรับปรุง';
             return (
                 <div className="mt-1 space-y-2.5">
                     {(question.options || []).map(opt => {
-                        const ans = answers.find(a => a.option_id === opt.id);
-                        // answer_numeric > 0 → positive (เพียงพอ) with score; 0 → only suggestion checked
-                        const isPositive = ans != null && ans.answer_numeric > 0;
-                        // suggestion checked: either numeric=0 (checked without positive) or answer_text present (both)
-                        const hasSugg = ans != null && (ans.answer_numeric === 0 || !!ans.answer_text);
+                        const matched = answers.find(a => a.option_id === opt.id);
+                        const isPositive = matched != null && matched.answer_numeric > 0;
+                        const hasSugg = matched != null && (matched.answer_numeric === 0 || !!matched.answer_text);
                         return (
                             <div key={opt.id} className="flex flex-col gap-1">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -226,13 +217,13 @@ export default function ResponsesClient({ id, data, formTitle }) {
                                             ☑ {suggLabel}
                                         </span>
                                     )}
-                                    {!ans && (
+                                    {!matched && (
                                         <span className="flex-shrink-0 text-xs text-neutral-300 dark:text-neutral-600 italic">ไม่ได้ตอบ</span>
                                     )}
                                 </div>
-                                {ans?.answer_text && (
+                                {matched?.answer_text && (
                                     <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5 rounded-none border border-amber-200 dark:border-amber-700/40 ml-2 break-words">
-                                        ✎ {ans.answer_text}
+                                        ✎ {matched.answer_text}
                                     </p>
                                 )}
                             </div>
@@ -242,23 +233,118 @@ export default function ResponsesClient({ id, data, formTitle }) {
             );
         }
 
-        return <span className="text-sm text-neutral-600 dark:text-neutral-300">{answers[0]?.answer_text || answers[0]?.answer_numeric || '-'}</span>;
-    };
+        default:
+            return <span className="text-sm text-neutral-600 dark:text-neutral-300">{answers[0]?.answer_text || answers[0]?.answer_numeric || '-'}</span>;
+    }
+}
 
-    const sectionMap = {};
-    sections.forEach(s => { sectionMap[s.id] = { ...s, questions: [] }; });
-    const unsectioned = [];
-    questions.forEach(q => {
-        if (q.section_id && sectionMap[q.section_id]) {
-            sectionMap[q.section_id].questions.push(q);
-        } else {
-            unsectioned.push(q);
+// ── Helper: format answer as plain text for export ──
+function formatAnswerText(question, responseAnswers) {
+    const answers = responseAnswers.filter(a => a.question_id === question.id);
+    if (answers.length === 0) return 'ไม่ได้ตอบ';
+
+    switch (question.type) {
+        case 'rating':
+            return `${answers[0].answer_numeric ?? '-'}/5`;
+        case 'rating_grid':
+            return (question.options || []).map(opt => {
+                const matched = answers.find(a => a.option_id === opt.id);
+                return `${opt.text}: ${matched?.answer_numeric ?? '-'}/5`;
+            }).join(', ');
+        case 'multiple_choice':
+            return (question.options || []).filter(opt => answers.some(a => a.option_id === opt.id)).map(opt => opt.text).join(', ') || '-';
+        case 'single_choice':
+        case 'dropdown':
+        case 'quiz': {
+            const opt = (question.options || []).find(o => o.id === answers[0]?.option_id);
+            return opt?.text || answers[0]?.answer_text || '-';
         }
-    });
-    const orderedSections = Object.values(sectionMap);
+        case 'choice_suggestion':
+            return (question.options || []).map(opt => {
+                const matched = answers.find(a => a.option_id === opt.id);
+                if (!matched) return `${opt.text}: ไม่ได้ตอบ`;
+                const parts = [];
+                if (matched.answer_numeric > 0) parts.push('เพียงพอ');
+                if (matched.answer_text) parts.push(matched.answer_text);
+                return `${opt.text}: ${parts.join(' / ') || '-'}`;
+            }).join('; ');
+        default:
+            return answers[0]?.answer_text || String(answers[0]?.answer_numeric ?? '') || '-';
+    }
+}
+
+export default function ResponsesClient({ id, data, formTitle }) {
+    const [expandedId, setExpandedId] = useState(null);
+
+    // ── Organize questions into sections ──
+    const { orderedSections, unsectioned } = useMemo(() => {
+        if (!data) return { orderedSections: [], unsectioned: [] };
+        const sectionMap = {};
+        data.sections.forEach(s => { sectionMap[s.id] = { ...s, questions: [] }; });
+        const unsec = [];
+        data.questions.forEach(q => {
+            if (q.section_id && sectionMap[q.section_id]) {
+                sectionMap[q.section_id].questions.push(q);
+            } else {
+                unsec.push(q);
+            }
+        });
+        return { orderedSections: Object.values(sectionMap), unsectioned: unsec };
+    }, [data]);
+
+    // ── All non-heading questions for export ──
+    const allQuestions = useMemo(() => {
+        const qs = [...unsectioned];
+        orderedSections.forEach(s => qs.push(...s.questions));
+        return qs.filter(q => q.type !== 'heading');
+    }, [orderedSections, unsectioned]);
+
+    const getRespondentName = useCallback((response) => {
+        if (!data) return `Response #${response.id}`;
+        const shortQ = data.questions.find(q => q.type === 'short_text');
+        if (!shortQ) return `Response #${response.id}`;
+        const ans = response.answers.find(a => a.question_id === shortQ.id);
+        return ans?.answer_text || `Response #${response.id}`;
+    }, [data]);
+
+    const getOverallRating = useCallback((response) => {
+        if (!data) return null;
+        const ratingQs = data.questions.filter(q => q.type === 'rating');
+        if (ratingQs.length === 0) return null;
+        const lastRatingQ = ratingQs[ratingQs.length - 1];
+        const ans = response.answers.find(a => a.question_id === lastRatingQ.id);
+        return ans?.answer_numeric ?? null;
+    }, [data]);
+
+    // ── Export single response as Excel ──
+    const exportSingleResponse = useCallback(async (response) => {
+        try {
+            const name = getRespondentName(response);
+            const rows = allQuestions.map(q => ({
+                'คำถาม': q.text,
+                'ประเภท': q.type,
+                'คำตอบ': formatAnswerText(q, response.answers),
+            }));
+
+            const XLSX = await import('xlsx');
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Response');
+            const safeName = name.replace(/[^a-zA-Z0-9ก-๙]/g, '_').slice(0, 50);
+            XLSX.writeFile(wb, `response_${response.id}_${safeName}.xlsx`);
+        } catch (err) {
+            console.error('Export failed:', err);
+            alert('Export ไม่สำเร็จ');
+        }
+    }, [allQuestions, getRespondentName]);
+
+    if (!data) return null;
+
+    const { total, responses } = data;
 
     return (
         <div className="space-y-6 max-w-6xl mx-auto pb-12">
+            {/* ── Header ── */}
             <div className="bg-white dark:bg-neutral-900 rounded-none border border-neutral-200 dark:border-neutral-800 shadow-sm px-5 py-4 flex items-center gap-4">
                 <Link href={`/admin/dashboard/forms/${id}/analytics`}
                     className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-none transition-colors flex-shrink-0">
@@ -271,13 +357,17 @@ export default function ResponsesClient({ id, data, formTitle }) {
                     </h1>
                     <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">{formTitle}</p>
                 </div>
-                <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-primary-50 dark:bg-primary/10 border border-primary-100 dark:border-primary/20 rounded-none">
-                    <Users className="w-4 h-4 text-primary" />
-                    <span className="font-bold text-primary dark:text-primary-light">{total}</span>
-                    <span className="text-xs text-primary dark:text-primary-light">ผู้ตอบ</span>
+                <div className="flex-shrink-0 flex items-center gap-3">
+                    <ExportButton formId={id} />
+                    <div className="flex items-center gap-2 px-4 py-2 bg-primary-50 dark:bg-primary/10 border border-primary-100 dark:border-primary/20 rounded-none">
+                        <Users className="w-4 h-4 text-primary" />
+                        <span className="font-bold text-primary dark:text-primary-light">{total}</span>
+                        <span className="text-xs text-primary dark:text-primary-light">ผู้ตอบ</span>
+                    </div>
                 </div>
             </div>
 
+            {/* ── Response List ── */}
             {responses.length === 0 ? (
                 <div className="text-center py-16 text-neutral-500 bg-white dark:bg-neutral-900 rounded-none border border-neutral-200 dark:border-neutral-800">
                     <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
@@ -294,9 +384,11 @@ export default function ResponsesClient({ id, data, formTitle }) {
                         return (
                             <div key={response.id}
                                 className="bg-white dark:bg-neutral-900 rounded-none border border-neutral-200 dark:border-neutral-800 shadow-sm overflow-hidden transition-shadow hover:shadow-md">
-                                <button
+
+                                {/* ── Collapsed header row ── */}
+                                <div
                                     onClick={() => setExpandedId(isExpanded ? null : response.id)}
-                                    className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors">
+                                    className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors cursor-pointer">
                                     <div className="flex-shrink-0 w-9 h-9 rounded-none bg-primary-50 dark:bg-primary/20 flex items-center justify-center text-primary dark:text-primary-light font-bold text-sm">
                                         {total - idx}
                                     </div>
@@ -310,16 +402,24 @@ export default function ResponsesClient({ id, data, formTitle }) {
                                         </div>
                                     </div>
                                     {overallRating !== null && (
-                                        <div className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-none text-white text-sm font-bold ${ratingColors[overallRating] || 'bg-neutral-400'}`}>
+                                        <div className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-none text-white text-sm font-bold ${RATING_COLORS[overallRating] || 'bg-neutral-400'}`}>
                                             <Star className="w-3.5 h-3.5" />
                                             {overallRating}/5
                                         </div>
                                     )}
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); exportSingleResponse(response); }}
+                                        title="Export Excel รายบุคคล"
+                                        className="flex-shrink-0 w-8 h-8 rounded-none flex items-center justify-center text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                    </button>
                                     <div className="flex-shrink-0 w-8 h-8 rounded-none flex items-center justify-center text-neutral-400 hover:text-primary transition-colors">
                                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                                     </div>
-                                </button>
+                                </div>
 
+                                {/* ── Expanded detail ── */}
                                 {isExpanded && (
                                     <div className="border-t border-neutral-100 dark:border-neutral-800">
                                         {orderedSections.map(section => (
@@ -328,19 +428,9 @@ export default function ResponsesClient({ id, data, formTitle }) {
                                                     <h3 className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">{section.title}</h3>
                                                 </div>
                                                 <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                                                    {section.questions.filter(q => q.type !== 'heading').map(q => {
-                                                        const Icon = TYPE_ICONS[q.type] || AlignLeft;
-                                                        const iconColor = TYPE_COLORS[q.type] || 'text-neutral-400';
-                                                        return (
-                                                            <div key={q.id} className="px-5 py-4 flex gap-4">
-                                                                <div className={`flex-shrink-0 mt-0.5 ${iconColor}`}><Icon className="w-4 h-4" /></div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{q.text}</p>
-                                                                    {renderAnswerValue(q, response.answers)}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
+                                                    {section.questions.filter(q => q.type !== 'heading').map(q => (
+                                                        <QuestionRow key={q.id} question={q} responseAnswers={response.answers} />
+                                                    ))}
                                                 </div>
                                             </div>
                                         ))}
@@ -350,19 +440,9 @@ export default function ResponsesClient({ id, data, formTitle }) {
                                                     <h3 className="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">คำถามทั่วไป</h3>
                                                 </div>
                                                 <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                                                    {unsectioned.map(q => {
-                                                        const Icon = TYPE_ICONS[q.type] || AlignLeft;
-                                                        const iconColor = TYPE_COLORS[q.type] || 'text-neutral-400';
-                                                        return (
-                                                            <div key={q.id} className="px-5 py-4 flex gap-4">
-                                                                <div className={`flex-shrink-0 mt-0.5 ${iconColor}`}><Icon className="w-4 h-4" /></div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">{q.text}</p>
-                                                                    {renderAnswerValue(q, response.answers)}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
+                                                    {unsectioned.filter(q => q.type !== 'heading').map(q => (
+                                                        <QuestionRow key={q.id} question={q} responseAnswers={response.answers} />
+                                                    ))}
                                                 </div>
                                             </div>
                                         )}

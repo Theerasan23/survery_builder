@@ -39,6 +39,7 @@ export default function FormBuilderClient({ editId = null, initialTopics = [] })
                     is_suggestion: !!q.is_suggestion,
                     image_url: q.image_url,
                     score: q.score ?? null,
+                    quiz_label_style: q.quiz_label_style || 'abc',
                     options: (q.options || []).map(o => ({ id: `o-${o.id}`, text: o.text, score: o.score ?? null }))
                 });
 
@@ -106,8 +107,9 @@ export default function FormBuilderClient({ editId = null, initialTopics = [] })
                         is_suggestion: !!q.is_suggestion,
                         image_url: q.image_url,
                         score: q.score ?? null,
+                        quiz_label_style: q.quiz_label_style || 'abc',
                         order_index: idx,
-                        options: ['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'choice_suggestion'].includes(q.type) ? q.options : undefined
+                        options: ['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'choice_suggestion', 'quiz'].includes(q.type) ? q.options : undefined
                     }))
                 }))
             };

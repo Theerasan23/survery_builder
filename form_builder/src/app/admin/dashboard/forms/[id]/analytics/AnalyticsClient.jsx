@@ -5,7 +5,7 @@ import { getFormAnalytics } from '@/lib/actions';
 import {
     BarChart, ArrowLeft, CheckSquare, Users, Sigma, TrendingUp, Star,
     Search, MessageSquarePlus, Calendar, ChevronDown, ChevronUp, Filter,
-    Download, FileSpreadsheet
+    Download, FileSpreadsheet, BookOpen
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -114,6 +114,11 @@ export default function AnalyticsClient({ formId }) {
     const grandTotalScore = scoredQs.reduce((sum, q) => sum + parseFloat(q.total_score), 0);
     const grandTotalAnswers = scoredQs.reduce((sum, q) => sum + (q.total_answers || 0), 0);
     const grandAvgScore = grandTotalAnswers > 0 ? grandTotalScore / grandTotalAnswers : null;
+
+    const quizQs = questions.filter(q => q.question_type === 'quiz' && q.total_score != null);
+    const quizTotalScore = quizQs.reduce((sum, q) => sum + parseFloat(q.total_score), 0);
+    const quizTotalAnswers = quizQs.reduce((sum, q) => sum + (q.total_answers || 0), 0);
+    const quizAvg = quizTotalAnswers > 0 ? quizTotalScore / quizTotalAnswers : null;
 
     const suggQs = questions.filter(q => q.question_type === 'choice_suggestion' && q.total_score != null);
     const suggTotalScore = suggQs.reduce((sum, q) => sum + parseFloat(q.total_score ?? 0), 0);
@@ -368,7 +373,7 @@ export default function AnalyticsClient({ formId }) {
                     </div>
 
                     {/* Row 2: Score summary */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 shadow-sm flex flex-col justify-center relative overflow-hidden group">
                             <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                                 <Sigma className="w-24 h-24 text-[#21304A]" />
@@ -396,6 +401,28 @@ export default function AnalyticsClient({ formId }) {
                             <p className="text-4xl font-bold text-amber-600 dark:text-amber-400">
                                 {grandAvgScore != null ? grandAvgScore.toFixed(2) : '-'}
                             </p>
+                        </div>
+                        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 shadow-sm flex flex-col justify-center relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <BookOpen className="w-24 h-24 text-orange-500" />
+                            </div>
+                            <h3 className="text-sm font-medium text-neutral-500 mb-1 flex items-center gap-2">
+                                <BookOpen className="w-4 h-4 text-orange-500" /> คะแนนรวม Quiz
+                            </h3>
+                            <p className="text-[11px] text-neutral-400 mb-1">
+                                {quizQs.length > 0 ? `${quizQs.length} ข้อ / ${quizTotalAnswers} คำตอบ` : 'ไม่มีคำถาม Quiz'}
+                            </p>
+                            <p className="text-[11px] font-mono text-orange-400/70 mb-2">
+                                = {quizTotalAnswers > 0 ? `${quizTotalScore.toLocaleString(undefined, { maximumFractionDigits: 2 })} ÷ ${quizTotalAnswers}` : 'Σ คะแนน ÷ Σ คำตอบ'}
+                            </p>
+                            <p className="text-4xl font-bold text-orange-600 dark:text-orange-400">
+                                {quizAvg != null ? quizAvg.toFixed(2) : '-'}
+                            </p>
+                            {quizQs.length > 0 && (
+                                <p className="text-[11px] text-neutral-400 mt-1">
+                                    รวม {quizTotalScore.toLocaleString(undefined, { maximumFractionDigits: 2 })} คะแนน
+                                </p>
+                            )}
                         </div>
                         <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-6 shadow-sm flex flex-col justify-center relative overflow-hidden group">
                             <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">

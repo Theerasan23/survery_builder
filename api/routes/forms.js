@@ -34,8 +34,8 @@ router.get('/dashboard-stats', async (req, res) => {
 
     let dateCondition = '';
     const dateParams = [];
-    if (from) { dateCondition += " AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') >= ?"; dateParams.push(from + ' 00:00:00'); }
-    if (to)   { dateCondition += " AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') <= ?"; dateParams.push(to   + ' 23:59:59'); }
+    if (from) { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?"; dateParams.push(from); }
+    if (to)   { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?"; dateParams.push(to); }
 
     try {
         const [[{ total_responses }]] = await pool.query(
@@ -87,10 +87,10 @@ router.get('/dashboard-stats', async (req, res) => {
             SELECT DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) as day, COUNT(*) as count
             FROM responses r
             WHERE r.personnel_form_id IS NULL
-              AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') >= ?
-              AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') <= ?
+              AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?
+              AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?
             GROUP BY day ORDER BY day ASC
-        `, [trendFrom + ' 00:00:00', trendTo + ' 23:59:59']);
+        `, [trendFrom, trendTo]);
 
         // Suggestion details: only choice_suggestion OR free-text typed into อื่นๆ option
         // (exclude plain text/input types, and exclude single_choice where answer_text == the option label)
@@ -186,8 +186,8 @@ router.get('/topic-analytics/:topicId', async (req, res) => {
 
     let dateCondition = '';
     const dateParams = [];
-    if (from) { dateCondition += " AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') >= ?"; dateParams.push(from + ' 00:00:00'); }
-    if (to)   { dateCondition += " AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') <= ?"; dateParams.push(to   + ' 23:59:59'); }
+    if (from) { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?"; dateParams.push(from); }
+    if (to)   { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?"; dateParams.push(to); }
 
     // Parse formIds filter
     let formIdFilter = '';
@@ -377,8 +377,8 @@ router.post('/', async (req, res) => {
                         const question = section.questions[qIndex];
 
                         const [qResult] = await connection.execute(
-                            'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                            [sectionId, formId, question.text, question.type, question.is_required !== false, qIndex, question.image_url || null, question.score != null ? parseFloat(question.score) : null, question.is_suggestion ? 1 : 0]
+                            'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion, quiz_label_style) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                            [sectionId, formId, question.text, question.type, question.is_required !== false, qIndex, question.image_url || null, question.score != null ? parseFloat(question.score) : null, question.is_suggestion ? 1 : 0, question.quiz_label_style || 'abc']
                         );
                         const questionId = qResult.insertId;
 
@@ -523,8 +523,8 @@ router.get('/:id/questions-analytics', async (req, res) => {
 
     let dateCondition = '';
     const dateParams = [];
-    if (from) { dateCondition += " AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') >= ?"; dateParams.push(from + ' 00:00:00'); }
-    if (to)   { dateCondition += " AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') <= ?"; dateParams.push(to   + ' 23:59:59'); }
+    if (from) { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?"; dateParams.push(from); }
+    if (to)   { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?"; dateParams.push(to); }
 
     try {
         const [[{ total_responses }]] = await pool.query(
@@ -663,7 +663,7 @@ router.get('/:id/responses-detail', async (req, res) => {
             [formId]
         );
         const [questions] = await pool.query(
-            'SELECT id, section_id, text, type, is_required, order_index, image_url, score, is_suggestion FROM questions WHERE form_id = ? ORDER BY order_index ASC',
+            'SELECT id, section_id, text, type, is_required, order_index, image_url, score, is_suggestion, quiz_label_style FROM questions WHERE form_id = ? ORDER BY order_index ASC',
             [formId]
         );
         const qIds = questions.map(q => q.id);
@@ -763,9 +763,24 @@ router.get('/:id/export', async (req, res) => {
             questionHeaders.add(header);
 
             let value = '';
-            if (row.question_type === 'rating') value = row.answer_numeric;
-            else if (['multiple_choice', 'single_choice', 'dropdown'].includes(row.question_type)) value = row.selected_option;
-            else value = row.answer_text;
+            if (row.question_type === 'rating' || row.question_type === 'rating_grid') {
+                value = row.answer_numeric;
+                if (row.question_type === 'rating_grid' && row.selected_option) {
+                    value = `${row.selected_option}: ${row.answer_numeric}`;
+                }
+            } else if (['multiple_choice', 'single_choice', 'dropdown', 'quiz'].includes(row.question_type)) {
+                value = row.selected_option || row.answer_text || '';
+                if (row.answer_numeric != null && row.question_type === 'quiz') {
+                    value = `${value} (${row.answer_numeric} คะแนน)`;
+                }
+            } else if (row.question_type === 'choice_suggestion') {
+                const parts = [];
+                if (row.answer_numeric > 0) parts.push(row.selected_option || 'เพียงพอ');
+                if (row.answer_text) parts.push(row.answer_text);
+                value = parts.join(' / ') || row.selected_option || '';
+            } else {
+                value = row.answer_text || row.answer_numeric || '';
+            }
 
             if (formattedData[row.response_id][header]) {
                 formattedData[row.response_id][header] += `, ${value}`;
@@ -906,8 +921,8 @@ router.put('/:id', async (req, res) => {
                         const question = section.questions[qIndex];
 
                         const [qResult] = await connection.execute(
-                            'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                            [sectionId, formId, question.text, question.type, question.is_required !== false, qIndex, question.image_url || null, question.score != null ? parseFloat(question.score) : null, question.is_suggestion ? 1 : 0]
+                            'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion, quiz_label_style) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                            [sectionId, formId, question.text, question.type, question.is_required !== false, qIndex, question.image_url || null, question.score != null ? parseFloat(question.score) : null, question.is_suggestion ? 1 : 0, question.quiz_label_style || 'abc']
                         );
                         const questionId = qResult.insertId;
 
@@ -1000,8 +1015,8 @@ router.get('/:id/report', async (req, res) => {
 
         let dateCondition = '';
         const dateParams = [];
-        if (from) { dateCondition += " AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') >= ?"; dateParams.push(from + ' 00:00:00'); }
-        if (to)   { dateCondition += " AND CONVERT_TZ(r.submitted_at,'+00:00','+07:00') <= ?"; dateParams.push(to   + ' 23:59:59'); }
+        if (from) { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?"; dateParams.push(from); }
+        if (to)   { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?"; dateParams.push(to); }
 
         const [[{ total }]] = await pool.query(
             `SELECT COUNT(*) as total FROM responses r WHERE r.form_id = ?${dateCondition}`,

@@ -138,7 +138,7 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                     const optsList = foundQ?.options || [];
                     const optObj = optsList.find(o => String(o.id) === String(value));
                     const otherTxt = isOtherOption(optObj?.text) ? (otherTexts[qId] || null) : null;
-                    const score = (qType !== 'quiz' && optObj?.score != null) ? parseFloat(optObj.score) : undefined;
+                    const score = optObj?.score != null ? parseFloat(optObj.score) : undefined;
                     formattedAnswers.push({
                         question_id: qId,
                         option_id: parseInt(value),
@@ -433,10 +433,13 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                         )}
 
                         {/* ── Quiz ── */}
-                        {q.type === 'quiz' && (
+                        {q.type === 'quiz' && (() => {
+                            const QUIZ_LABEL_STYLES = { abc: ['A','B','C','D'], thai: ['ก','ข','ค','ง'], num: ['1','2','3','4'] };
+                            const qLabels = QUIZ_LABEL_STYLES[q.quiz_label_style] || QUIZ_LABEL_STYLES.abc;
+                            return (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {(q.options || []).map((opt, idx) => {
-                                    const optLabel = ['A', 'B', 'C', 'D'][idx] || String(idx + 1);
+                                    const optLabel = qLabels[idx] || String(idx + 1);
                                     const optText = typeof opt === 'object' ? opt.text : opt;
                                     const optId = typeof opt === 'object' ? opt.id : idx;
                                     const isSelected = String(val) === String(optId);
@@ -461,7 +464,8 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                                     );
                                 })}
                             </div>
-                        )}
+                            );
+                        })()}
 
                         {/* ── Dropdown ── */}
                         {q.type === 'dropdown' && (
