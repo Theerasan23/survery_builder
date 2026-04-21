@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
-import { CheckCircle, XCircle, Loader2, Phone, Star, ChevronRight } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, Phone, Star, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL;
 
@@ -256,6 +256,7 @@ export default function PersonalFormClient({ deviceId }) {
         const logoSrc = imgUrl(org?.logo_url);
         return (
             <div className="h-screen w-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#f0f8ff' }}>
+                <FullscreenToggle variant="light" />
 
                 {/* ── Vector decoration: concentric arcs from top-right corner ── */}
                 <div className="absolute top-0 right-0 overflow-hidden pointer-events-none" style={{ width: '65%', height: '65%', zIndex: 1 }}>
@@ -441,6 +442,7 @@ export default function PersonalFormClient({ deviceId }) {
             className="min-h-screen w-screen relative"
             style={{ background: 'linear-gradient(180deg, #0b1e3b 0%, #0f2a4a 50%, #1e1b4b 100%)' }}
         >
+            <FullscreenToggle />
             {/* decorative glow */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
                 <div className="absolute -top-40 -right-40 w-[480px] h-[480px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.18), transparent 70%)' }} />
@@ -582,6 +584,40 @@ export default function PersonalFormClient({ deviceId }) {
     );
 }
 
+function FullscreenToggle({ variant = 'dark' }) {
+    const [isFs, setIsFs] = useState(false);
+    useEffect(() => {
+        const handler = () => setIsFs(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', handler);
+        handler();
+        return () => document.removeEventListener('fullscreenchange', handler);
+    }, []);
+    const toggle = async () => {
+        try {
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+            } else {
+                await document.documentElement.requestFullscreen();
+            }
+        } catch { /* ignore */ }
+    };
+    const Icon = isFs ? Minimize2 : Maximize2;
+    const isLight = variant === 'light';
+    return (
+        <button
+            type="button"
+            onClick={toggle}
+            aria-label={isFs ? 'ออกจากเต็มจอ' : 'เข้าสู่เต็มจอ'}
+            className={`fixed top-3 right-3 md:top-5 md:right-5 z-50 w-10 h-10 md:w-12 md:h-12 rounded-full backdrop-blur-md shadow-lg flex items-center justify-center transition active:scale-95 ${isLight
+                ? 'bg-white/70 hover:bg-white border border-neutral-200 text-neutral-700 hover:text-neutral-900'
+                : 'bg-white/10 hover:bg-white/20 border border-white/20 text-white'
+                }`}
+        >
+            <Icon className="w-5 h-5 md:w-6 md:h-6" strokeWidth={2} />
+        </button>
+    );
+}
+
 function SubmittedScreen({ onDone }) {
     const TOTAL = 5;
     const [remaining, setRemaining] = useState(TOTAL);
@@ -595,6 +631,7 @@ function SubmittedScreen({ onDone }) {
 
     return (
         <div className="h-screen w-screen flex items-center justify-center relative overflow-hidden" style={{ background: 'radial-gradient(ellipse at top, #1e1b4b 0%, #0f2a4a 50%, #0b1e3b 100%)' }}>
+            <FullscreenToggle />
             {/* Floating decorative orbs */}
             <div className="pointer-events-none absolute inset-0">
                 <div className="absolute top-1/4 -left-20 w-64 h-64 md:w-96 md:h-96 rounded-full blur-3xl opacity-40" style={{ background: 'radial-gradient(circle, #22d3ee, transparent 70%)' }} />
