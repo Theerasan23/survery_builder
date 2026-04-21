@@ -292,7 +292,19 @@ export default function PersonalFormClient({ deviceId }) {
                         <div className="flex flex-col flex-1 min-w-0 gap-3 md:gap-6 pt-4 md:pt-16">
                             <div>
                                 <h1 className="text-neutral-900 font-bold text-2xl md:text-5xl leading-tight">
-                                    {device.personnel_name || 'เจ้าหน้าที่'}
+                                    {(() => {
+                                        const full = device.personnel_name || 'เจ้าหน้าที่';
+                                        const parts = full.trim().split(/\s+/);
+                                        if (parts.length >= 2) {
+                                            return (
+                                                <>
+                                                    <span className="block">{parts[0]}</span>
+                                                    <span className="block">{parts.slice(1).join(' ')}</span>
+                                                </>
+                                            );
+                                        }
+                                        return full;
+                                    })()}
                                 </h1>
                                 <div className="mt-2 md:mt-4 h-1 md:h-1.5 w-16 md:w-24 rounded-full" style={{ background: 'linear-gradient(135deg, #0d9e8a, #38bdf8)' }} />
                             </div>
@@ -306,9 +318,9 @@ export default function PersonalFormClient({ deviceId }) {
                                     <div className="w-11 h-11 md:w-16 md:h-16 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center shrink-0">
                                         <Phone className="w-5 h-5 md:w-8 md:h-8 text-teal-600" />
                                     </div>
-                                    <div>
-                                        <p className="text-neutral-400 text-xs md:text-lg leading-none">Call to find out more</p>
-                                        <p className="text-neutral-800 text-lg md:text-3xl font-bold mt-1">โทร. {org.phone}</p>
+                                    <div className="min-w-0">
+                                        <p className="text-neutral-400 text-xs md:text-lg leading-none whitespace-nowrap">Call to find out more</p>
+                                        <p className="text-neutral-800 text-lg md:text-3xl font-bold mt-1 whitespace-nowrap">โทร. {org.phone}</p>
                                     </div>
                                 </div>
                             )}
