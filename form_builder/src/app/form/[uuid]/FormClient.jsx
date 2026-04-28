@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { submitFormResponse } from '@/lib/actions';
 import { ChevronRight, ChevronLeft, Send, CheckCircle2, FileText, Star } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -54,6 +54,25 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                     return v !== undefined && v !== null && v !== '';
                 });
                 if (!allAnswered) errors[q.id] = true;
+                return;
+            }
+
+            // matrix: every row must have a column selected; if the chosen column label contains "ระบุ", a text is required
+            if (q.type === 'matrix') {
+                const cols = Array.isArray(q.columns_config) ? q.columns_config : [];
+                const allOk = (q.options || []).every(opt => {
+                    const rk = `${q.id}-${opt.id}`;
+                    const v = answers[rk];
+                    if (v === undefined || v === null || v === '') return false;
+                    const colIdx = parseInt(v);
+                    const col = cols[colIdx];
+                    if (col && (col.label || '').includes('ระบุ')) {
+                        const txt = (otherTexts[rk] || '').trim();
+                        if (!txt) return false;
+                    }
+                    return true;
+                });
+                if (!allOk) errors[q.id] = true;
                 return;
             }
 
@@ -112,6 +131,18 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                         option_id: optId,
                         answer_numeric: positiveScore,
                         answer_text: suggTxt
+                    });
+                } else if (qType === 'matrix' && isGridStr) {
+                    const colIdx = parseInt(value);
+                    const cols = Array.isArray(foundQ?.columns_config) ? foundQ.columns_config : [];
+                    const col = cols[colIdx];
+                    const requiresText = !!(col && (col.label || '').includes('ระบุ'));
+                    const txt = requiresText ? (otherTexts[qIdStr] || null) : null;
+                    formattedAnswers.push({
+                        question_id: qId,
+                        option_id: optId,
+                        answer_numeric: colIdx,
+                        ...(txt ? { answer_text: txt } : {})
                     });
                 } else if (qType === 'rating_grid' && isGridStr) {
                     formattedAnswers.push({ question_id: qId, option_id: optId, answer_numeric: parseInt(value) });
@@ -406,6 +437,73 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                                 </table>
                             </div>
                         )}
+
+                        {/* ── Matrix (custom grid) ── */}
+                        {q.type === 'matrix' && (() => {
+                            const cols = Array.isArray(q.columns_config) ? q.columns_config : [];
+                            return (
+                                <div className="overflow-x-auto border border-neutral-200 dark:border-neutral-700/50 rounded">
+                                    <table className="w-full text-left min-w-[520px]">
+                                        <thead>
+                                            <tr className="bg-neutral-100 dark:bg-neutral-800">
+                                                <th className="px-4 py-3 text-xs font-semibold text-neutral-500 dark:text-neutral-400 w-2/5">หัวข้อ</th>
+                                                {cols.map((c, i) => (
+                                                    <th key={i} className="px-3 py-3 text-center text-xs font-bold text-neutral-600 dark:text-neutral-300">
+                                                        {c.label || `คอลัมน์ ${i + 1}`}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                                            {q.options?.map((opt) => {
+                                                const rk = `${q.id}-${opt.id}`;
+                                                const sel = answers[rk];
+                                                const selIdx = sel === undefined || sel === '' ? null : parseInt(sel);
+                                                const selectedCol = selIdx != null ? cols[selIdx] : null;
+                                                const requiresText = !!(selectedCol && (selectedCol.label || '').includes('ระบุ'));
+                                                return (
+                                                    <React.Fragment key={opt.id}>
+                                                    <tr className="hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors">
+                                                        <td className="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300 font-medium">{opt.text}</td>
+                                                        {cols.map((c, i) => (
+                                                            <td key={i} className="px-3 py-3 text-center">
+                                                                <label className="inline-flex cursor-pointer">
+                                                                    <input
+                                                                        type="radio"
+                                                                        name={`mx-${q.id}-${opt.id}`}
+                                                                        value={i}
+                                                                        checked={selIdx === i}
+                                                                        onChange={() => handleAnswerChange(rk, i)}
+                                                                        className="sr-only"
+                                                                    />
+                                                                    <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${selIdx === i ? 'border-violet-600 bg-violet-600' : 'border-neutral-300 dark:border-neutral-600 hover:border-violet-400'}`}>
+                                                                        {selIdx === i && <span className="w-2 h-2 rounded-full bg-white" />}
+                                                                    </span>
+                                                                </label>
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                    {requiresText && (
+                                                        <tr className="bg-violet-50/40 dark:bg-violet-900/10">
+                                                            <td colSpan={cols.length + 1} className="px-4 py-2">
+                                                                <input
+                                                                    type="text"
+                                                                    value={otherTexts[rk] || ''}
+                                                                    onChange={e => setOtherTexts(prev => ({ ...prev, [rk]: e.target.value }))}
+                                                                    className="w-full px-3 py-2 rounded border border-violet-200 dark:border-violet-700/50 focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white dark:bg-neutral-800 dark:text-white text-sm"
+                                                                    placeholder={`โปรดระบุสำหรับ "${opt.text}"...`}
+                                                                />
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            );
+                        })()}
 
                         {/* ── Gender ── */}
                         {q.type === 'gender' && (

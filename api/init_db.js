@@ -231,6 +231,14 @@ async function initializeDB() {
       if (!e.message.includes('Duplicate column') && !e.message.includes('Duplicate key name') && !e.message.includes('already exists')) console.error('Migration questions error:', e.message);
     }
 
+    // Migrations: add columns_config to questions (for matrix-type questions)
+    try {
+      await connection.query('ALTER TABLE questions ADD COLUMN columns_config JSON NULL');
+      console.log('Migration: added columns_config to questions');
+    } catch (e) {
+      if (!e.message.includes('Duplicate column')) console.error('Migration questions columns_config error:', e.message);
+    }
+
     // Migrations: add personnel_form_id and job_id to devices
     try {
       await connection.query('ALTER TABLE devices ADD COLUMN personnel_form_id INT NULL AFTER form_id');

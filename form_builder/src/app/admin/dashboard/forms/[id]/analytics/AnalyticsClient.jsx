@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { getFormAnalytics } from '@/lib/actions';
 import {
     BarChart, ArrowLeft, CheckSquare, Users, Sigma, TrendingUp, Star,
@@ -29,6 +29,54 @@ function RatingDistribution({ dist, total }) {
                 })}
             </div>
             <p className="text-neutral-400 dark:text-neutral-500">รวม {total} คำตอบ</p>
+        </div>
+    );
+}
+
+function MatrixBreakdown({ q }) {
+    const cols = Array.isArray(q.columns_config) ? q.columns_config : [];
+    const rows = q.matrix_data?.rows || [];
+    const counts = q.matrix_data?.counts || {};
+    if (rows.length === 0 || cols.length === 0) {
+        return <p className="text-xs text-neutral-400 italic">ยังไม่มีข้อมูลตาราง</p>;
+    }
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs min-w-[480px]">
+                <thead>
+                    <tr className="bg-violet-100/50 dark:bg-violet-900/30">
+                        <th className="px-3 py-2 text-violet-800 dark:text-violet-300 font-semibold border border-violet-200 dark:border-violet-700/50 w-2/5">หัวข้อย่อย</th>
+                        {cols.map((c, i) => (
+                            <th key={i} className="px-3 py-2 text-center text-violet-800 dark:text-violet-300 font-semibold border border-violet-200 dark:border-violet-700/50">
+                                {c.label || `คอลัมน์ ${i + 1}`}
+                            </th>
+                        ))}
+                        <th className="px-3 py-2 text-center text-violet-700 dark:text-violet-400 font-semibold border border-violet-200 dark:border-violet-700/50">รวม</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((r) => {
+                        const rowCounts = counts[r.id] || {};
+                        const rowTotal = Object.values(rowCounts).reduce((a, b) => a + b, 0);
+                        return (
+                            <tr key={r.id} className="bg-white dark:bg-neutral-900">
+                                <td className="px-3 py-2 border border-violet-200/60 dark:border-violet-700/30 text-neutral-700 dark:text-neutral-300 font-medium">{r.text}</td>
+                                {cols.map((_, ci) => {
+                                    const cnt = rowCounts[ci] || 0;
+                                    const pct = rowTotal > 0 ? (cnt / rowTotal) * 100 : 0;
+                                    return (
+                                        <td key={ci} className="px-3 py-2 text-center border border-violet-200/60 dark:border-violet-700/30">
+                                            <span className="font-semibold text-violet-700 dark:text-violet-300">{cnt}</span>
+                                            <span className="text-[10px] text-neutral-400 ml-1">({pct.toFixed(0)}%)</span>
+                                        </td>
+                                    );
+                                })}
+                                <td className="px-3 py-2 text-center border border-violet-200/60 dark:border-violet-700/30 font-bold text-neutral-700 dark:text-neutral-300">{rowTotal}</td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
         </div>
     );
 }
@@ -101,7 +149,7 @@ export default function AnalyticsClient({ formId }) {
     useEffect(() => { load(); }, []);
 
     const questions = data?.questions || [];
-    const isChoice = (type) => ['multiple_choice', 'single_choice', 'dropdown', 'rating', 'rating_grid', 'choice_suggestion'].includes(type);
+    const isChoice = (type) => ['multiple_choice', 'single_choice', 'dropdown', 'rating', 'rating_grid', 'choice_suggestion', 'matrix'].includes(type);
     const totalQuestions = questions.length;
     const choiceQuestions = questions.filter(q => isChoice(q.question_type)).length;
 
@@ -125,9 +173,9 @@ export default function AnalyticsClient({ formId }) {
     const suggTotalAnswers = suggQs.reduce((sum, q) => sum + (q.total_answers || 0), 0);
     const suggAvg = suggTotalAnswers > 0 ? suggTotalScore / suggTotalAnswers : null;
 
-    // All questions marked is_suggestion=1 that have suggestion entries
+    // All questions marked is_suggestion=1 that have suggestion entries (or matrix with "ระบุ" texts)
     const allSuggQs = questions
-        .filter(q => q.is_suggestion && q.suggestions?.length > 0);
+        .filter(q => (q.is_suggestion || q.question_type === 'matrix') && q.suggestions?.length > 0);
     const totalSuggResponses = allSuggQs.reduce((n, q) => n + q.suggestions.length, 0);
 
     const exportPDF = async () => {
@@ -498,8 +546,10 @@ export default function AnalyticsClient({ formId }) {
                                                     : idx % 2 === 0
                                                         ? 'bg-white dark:bg-neutral-900'
                                                         : 'bg-neutral-50/60 dark:bg-neutral-800/30';
+                                                const isMatrixRow = q.question_type === 'matrix';
                                                 return (
-                                                    <tr key={q.question_id || idx} className={`${rowBg} ${!isHeadingRow ? 'hover:bg-indigo-50/40 dark:hover:bg-indigo-500/5' : ''} transition-colors border-b border-neutral-100 dark:border-neutral-800 last:border-0`}>
+                                                    <React.Fragment key={q.question_id || idx}>
+                                                    <tr className={`${rowBg} ${!isHeadingRow ? 'hover:bg-indigo-50/40 dark:hover:bg-indigo-500/5' : ''} transition-colors border-b border-neutral-100 dark:border-neutral-800 last:border-0`}>
                                                         <td className={`p-4 text-sm font-medium ${isHeadingRow ? 'text-white font-bold' : 'text-neutral-800 dark:text-neutral-200'}`}>
                                                             {q.question_text}
                                                             {q.question_type === 'rating' && q.rating_distribution && (
@@ -542,6 +592,14 @@ export default function AnalyticsClient({ formId }) {
                                                             )}
                                                         </td>
                                                     </tr>
+                                                    {isMatrixRow && q.matrix_data && q.columns_config && (
+                                                        <tr className="bg-violet-50/30 dark:bg-violet-900/10 border-b border-neutral-100 dark:border-neutral-800">
+                                                            <td colSpan={5} className="p-4">
+                                                                <MatrixBreakdown q={q} />
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    </React.Fragment>
                                                 );
                                             })
                                         ) : (

@@ -8,6 +8,7 @@ import { getOptionSets, uploadImage } from '@/lib/actions';
 const TYPE_CONFIG = {
     rating:          { label: 'Rating 1–5',      icon: Star,       color: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400' },
     rating_grid:     { label: 'Rating Grid',      icon: Grid3x3,    color: 'bg-[#eef1f5] text-[#21304A] dark:bg-[#21304A]/15 dark:text-[#a1afc5]' },
+    matrix:          { label: 'Matrix (ตาราง)',   icon: Grid3x3,    color: 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-400' },
     short_text:      { label: 'Short Text',       icon: AlignLeft,  color: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400' },
     long_text:       { label: 'Long Text',        icon: AlignJustify, color: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-400' },
     single_choice:   { label: 'Single Choice',    icon: Circle,     color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400' },
@@ -34,6 +35,7 @@ const QUESTION_TYPE_OPTIONS = [
     { value: 'organization',     label: 'หน่วยงาน (Organization)' },
     { value: 'rating',           label: 'Rating (1-5)' },
     { value: 'rating_grid',      label: 'Rating Grid (ตาราง)' },
+    { value: 'matrix',           label: 'Matrix (ตาราง custom)' },
     { value: 'quiz',             label: 'Quiz (ข้อสอบ 4 ตัวเลือก)' },
     { value: 'short_text',       label: 'Short Text' },
     { value: 'long_text',        label: 'Long Text' },
@@ -98,6 +100,15 @@ export default function SortableQuestion({ question, questionIndex, updateQuesti
         if (question.type === 'quiz' && (!question.options || question.options.length === 0)) {
             updateQuestion(question.id, 'options', [{ text: '', score: null }, { text: '', score: null }, { text: '', score: null }, { text: '', score: null }]);
         }
+        // Auto-initialize matrix columns + rows
+        if (question.type === 'matrix') {
+            if (!Array.isArray(question.columns_config) || question.columns_config.length === 0) {
+                updateQuestion(question.id, 'columns_config', [{ label: 'ใช่' }, { label: 'ไม่ใช่ (โปรดระบุ)' }]);
+            }
+            if (!question.options || question.options.length === 0) {
+                updateQuestion(question.id, 'options', ['หัวข้อย่อยที่ 1']);
+            }
+        }
     }, [question.type]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Shared option mutation helpers
@@ -149,6 +160,7 @@ export default function SortableQuestion({ question, questionIndex, updateQuesti
     };
 
     const isRatingGrid    = question.type === 'rating_grid';
+    const isMatrix        = question.type === 'matrix';
     const isGender        = question.type === 'gender';
     const isQuiz          = question.type === 'quiz';
     const isOrganization  = question.type === 'organization';
@@ -420,6 +432,112 @@ export default function SortableQuestion({ question, questionIndex, updateQuesti
                     </button>
                 </div>
             )}
+
+            {/* ── MATRIX (custom grid) ── */}
+            {isMatrix && (() => {
+                const cols = Array.isArray(question.columns_config) ? question.columns_config : [];
+                const updateColLabel = (idx, label) => {
+                    const next = cols.map((c, i) => i === idx ? { ...c, label } : c);
+                    updateQuestion(question.id, 'columns_config', next);
+                };
+                const setColCount = (n) => {
+                    const target = Math.max(1, Math.min(8, parseInt(n) || 1));
+                    let next = [...cols];
+                    while (next.length < target) next.push({ label: `คอลัมน์ ${next.length + 1}` });
+                    if (next.length > target) next = next.slice(0, target);
+                    updateQuestion(question.id, 'columns_config', next);
+                };
+                return (
+                    <div className="px-4 py-3 space-y-3">
+                        <div className="flex items-center gap-3 px-3 py-2 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20">
+                            <span className="text-xs font-semibold text-violet-700 dark:text-violet-300">จำนวนคอลัมน์</span>
+                            <input
+                                type="number"
+                                min="1"
+                                max="8"
+                                value={cols.length || 1}
+                                onChange={e => setColCount(e.target.value)}
+                                className="w-16 px-2 py-1 text-xs text-center font-semibold bg-white dark:bg-neutral-800 border border-violet-200 dark:border-violet-500/30 outline-none focus:ring-2 focus:ring-violet-400"
+                            />
+                            <span className="text-[11px] text-violet-600/80 dark:text-violet-300/80">
+                                หัวข้อคอลัมน์ที่มีคำว่า &ldquo;ระบุ&rdquo; จะแสดงช่องกรอกข้อความเพิ่มเติม
+                            </span>
+                        </div>
+
+                        <div className="overflow-x-auto border border-neutral-200 dark:border-neutral-700">
+                            <table className="w-full text-left border-collapse min-w-[500px]">
+                                <thead>
+                                    <tr className="bg-neutral-100 dark:bg-neutral-800">
+                                        <th className="px-3 py-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400 border-b border-r border-neutral-200 dark:border-neutral-700 w-1/3">หัวข้อย่อย / คำถาม</th>
+                                        {cols.map((c, i) => {
+                                            const hasSpecify = (c.label || '').includes('ระบุ');
+                                            return (
+                                                <th key={i} className="px-2 py-2 text-center text-xs font-semibold text-neutral-600 dark:text-neutral-300 border-b border-r last:border-r-0 border-neutral-200 dark:border-neutral-700 min-w-[120px]">
+                                                    <input
+                                                        type="text"
+                                                        value={c.label || ''}
+                                                        onChange={e => updateColLabel(i, e.target.value)}
+                                                        className="w-full bg-transparent border-b border-transparent hover:border-violet-300 focus:border-violet-500 outline-none text-xs text-center font-semibold text-neutral-700 dark:text-neutral-300 pb-0.5"
+                                                        placeholder={`คอลัมน์ ${i + 1}`}
+                                                    />
+                                                    {hasSpecify && (
+                                                        <span className="block mt-1 text-[9px] font-normal text-violet-600 dark:text-violet-400">
+                                                            ↳ มีช่องกรอกข้อความ
+                                                        </span>
+                                                    )}
+                                                </th>
+                                            );
+                                        })}
+                                        <th className="w-7 border-b border-neutral-200 dark:border-neutral-700" />
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {(question.options || []).length === 0 ? (
+                                        <tr>
+                                            <td colSpan={cols.length + 2} className="px-4 py-6 text-center text-xs text-neutral-400 italic">
+                                                ยังไม่มีหัวข้อย่อย — กดปุ่ม &ldquo;เพิ่มหัวข้อย่อย&rdquo; ด้านล่าง
+                                            </td>
+                                        </tr>
+                                    ) : (question.options || []).map((opt, idx) => (
+                                        <tr key={idx} className="border-b border-neutral-100 dark:border-neutral-800 last:border-0 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 group/row">
+                                            <td className="px-3 py-2 border-r border-neutral-100 dark:border-neutral-800">
+                                                <input
+                                                    type="text"
+                                                    value={opt.text || opt}
+                                                    onChange={(e) => updateOptionAt(idx, e.target.value)}
+                                                    className="w-full bg-transparent border-b border-transparent hover:border-violet-300 focus:border-violet-500 outline-none text-xs text-neutral-700 dark:text-neutral-300 pb-0.5"
+                                                    placeholder={`${idx + 1}. หัวข้อย่อย...`}
+                                                />
+                                            </td>
+                                            {cols.map((_, ci) => (
+                                                <td key={ci} className="px-2 py-2 text-center border-r last:border-r-0 border-neutral-100 dark:border-neutral-800">
+                                                    <div className="w-5 h-5 rounded-full border-2 border-neutral-300 dark:border-neutral-600 mx-auto opacity-40" />
+                                                </td>
+                                            ))}
+                                            <td className="px-1 py-2">
+                                                <button onClick={() => removeOptionAt(idx)}
+                                                    className="opacity-0 group-hover/row:opacity-100 p-1 text-neutral-300 hover:text-red-400 transition-all">
+                                                    <Trash2 className="w-3 h-3" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <button
+                            onClick={() => {
+                                const newOpts = [...(question.options || []), `หัวข้อย่อยที่ ${(question.options?.length || 0) + 1}`];
+                                updateQuestion(question.id, 'options', newOpts);
+                            }}
+                            className="flex items-center gap-1.5 text-xs text-violet-700 dark:text-violet-300 hover:text-violet-900 dark:hover:text-white font-semibold transition-colors pl-1"
+                        >
+                            <Plus className="w-3.5 h-3.5" /> เพิ่มหัวข้อย่อย
+                        </button>
+                    </div>
+                );
+            })()}
 
             {/* ── CHOICE OPTIONS (single / multiple / dropdown / choice_suggestion) ── */}
             {hasChoiceOpts && (

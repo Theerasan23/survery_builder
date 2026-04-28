@@ -376,14 +376,17 @@ router.post('/', async (req, res) => {
                     for (let qIndex = 0; qIndex < section.questions.length; qIndex++) {
                         const question = section.questions[qIndex];
 
+                        const columnsConfigJson = (question.type === 'matrix' && Array.isArray(question.columns_config))
+                            ? JSON.stringify(question.columns_config)
+                            : null;
                         const [qResult] = await connection.execute(
-                            'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion, quiz_label_style) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                            [sectionId, formId, question.text, question.type, question.is_required !== false, qIndex, question.image_url || null, question.score != null ? parseFloat(question.score) : null, question.is_suggestion ? 1 : 0, question.quiz_label_style || 'abc']
+                            'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion, quiz_label_style, columns_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                            [sectionId, formId, question.text, question.type, question.is_required !== false, qIndex, question.image_url || null, question.score != null ? parseFloat(question.score) : null, question.is_suggestion ? 1 : 0, question.quiz_label_style || 'abc', columnsConfigJson]
                         );
                         const questionId = qResult.insertId;
 
                         // Insert Options
-                        if (['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'quiz', 'choice_suggestion'].includes(question.type) && question.options && Array.isArray(question.options)) {
+                        if (['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'quiz', 'choice_suggestion', 'matrix'].includes(question.type) && question.options && Array.isArray(question.options)) {
                             for (let oIndex = 0; oIndex < question.options.length; oIndex++) {
                                 const opt = question.options[oIndex];
                                 const optScore = (typeof opt === 'object' && opt.score != null) ? parseFloat(opt.score) : null;
@@ -539,6 +542,7 @@ router.get('/:id/questions-analytics', async (req, res) => {
                 q.text AS question_text,
                 q.type AS question_type,
                 q.is_suggestion,
+                q.columns_config,
                 COUNT(a.id) AS total_answers,
                 SUM(a.answer_numeric) AS total_score,
                 AVG(a.answer_numeric) AS average_score
@@ -548,7 +552,7 @@ router.get('/:id/questions-analytics', async (req, res) => {
                     SELECT id FROM responses r WHERE r.form_id = ?${dateCondition}
                 )
             WHERE q.form_id = ?
-            GROUP BY q.id, q.text, q.type, q.is_suggestion, q.order_index
+            GROUP BY q.id, q.text, q.type, q.is_suggestion, q.columns_config, q.order_index
             ORDER BY q.order_index ASC
         `, [formId, ...dateParams, formId]);
 
@@ -634,12 +638,90 @@ router.get('/:id/questions-analytics', async (req, res) => {
             });
         }
 
+        // Matrix questions: per-row × per-column counts + row labels (options)
+        const matrixQuestionIds = questions.filter(q => q.question_type === 'matrix').map(q => q.question_id);
+        const matrixDataByQ = {};
+        const matrixSuggByQ = {};
+        if (matrixQuestionIds.length > 0) {
+            const [matrixRows] = await pool.query(
+                'SELECT id, question_id, text, order_index FROM options WHERE question_id IN (?) ORDER BY question_id, order_index ASC',
+                [matrixQuestionIds]
+            );
+            const rowsByQ = {};
+            for (const r of matrixRows) {
+                if (!rowsByQ[r.question_id]) rowsByQ[r.question_id] = [];
+                rowsByQ[r.question_id].push({ id: r.id, text: r.text, order_index: r.order_index });
+            }
+
+            const [pivot] = await pool.query(`
+                SELECT a.question_id, a.option_id, a.answer_numeric AS col_index, COUNT(*) AS count
+                FROM answers a
+                WHERE a.question_id IN (?)
+                  AND a.option_id IS NOT NULL
+                  AND a.answer_numeric IS NOT NULL
+                  AND a.response_id IN (
+                      SELECT id FROM responses r WHERE r.form_id = ?${dateCondition}
+                  )
+                GROUP BY a.question_id, a.option_id, a.answer_numeric
+            `, [matrixQuestionIds, formId, ...dateParams]);
+
+            const counts = {};
+            for (const p of pivot) {
+                counts[p.question_id] = counts[p.question_id] || {};
+                counts[p.question_id][p.option_id] = counts[p.question_id][p.option_id] || {};
+                counts[p.question_id][p.option_id][p.col_index] = Number(p.count);
+            }
+
+            const [matrixSuggRows] = await pool.query(`
+                SELECT a.question_id, a.option_id, a.answer_numeric AS col_index, a.answer_text, r.submitted_at, o.text AS row_text
+                FROM answers a
+                JOIN responses r ON a.response_id = r.id
+                LEFT JOIN options o ON a.option_id = o.id
+                WHERE a.question_id IN (?)
+                  AND a.answer_text IS NOT NULL AND a.answer_text != ''
+                  AND r.form_id = ?${dateCondition}
+                ORDER BY r.submitted_at DESC
+            `, [matrixQuestionIds, formId, ...dateParams]);
+
+            for (const qid of matrixQuestionIds) {
+                matrixDataByQ[qid] = {
+                    rows: rowsByQ[qid] || [],
+                    counts: counts[qid] || {}
+                };
+                matrixSuggByQ[qid] = [];
+            }
+            for (const r of matrixSuggRows) {
+                if (!matrixSuggByQ[r.question_id]) matrixSuggByQ[r.question_id] = [];
+                matrixSuggByQ[r.question_id].push({
+                    option_id: r.option_id,
+                    row_text: r.row_text,
+                    col_index: r.col_index,
+                    text: r.answer_text,
+                    submitted_at: r.submitted_at
+                });
+            }
+        }
+
         // Attach suggestions to questions
-        const questionsWithSugg = questions.map(q => ({
-            ...q,
-            suggestions: suggByQ[q.question_id] || [],
-            rating_distribution: q.question_type === 'rating' ? (distByQ[q.question_id] || {}) : undefined
-        }));
+        const questionsWithSugg = questions.map(q => {
+            const cc = q.columns_config;
+            const parsedCols = cc ? (typeof cc === 'string' ? (() => { try { return JSON.parse(cc); } catch { return null; } })() : cc) : null;
+            return {
+                ...q,
+                columns_config: parsedCols,
+                suggestions: q.question_type === 'matrix'
+                    ? (matrixSuggByQ[q.question_id] || []).map(s => ({
+                        response_id: null,
+                        question_type: 'matrix',
+                        selected_options: s.row_text ? [s.row_text] : [],
+                        option_texts: [{ option: s.row_text || '', text: s.text }],
+                        submitted_at: s.submitted_at
+                    }))
+                    : (suggByQ[q.question_id] || []),
+                rating_distribution: q.question_type === 'rating' ? (distByQ[q.question_id] || {}) : undefined,
+                matrix_data: q.question_type === 'matrix' ? (matrixDataByQ[q.question_id] || { rows: [], counts: {} }) : undefined
+            };
+        });
 
         res.json({ total_responses, questions: questionsWithSugg });
     } catch (error) {
@@ -729,12 +811,13 @@ router.get('/:id/export', async (req, res) => {
     const formId = req.params.id;
     try {
         const [details] = await pool.query(`
-            SELECT 
+            SELECT
                 r.id AS response_id,
                 r.respondent_id,
                 r.submitted_at,
                 q.text AS question_text,
                 q.type AS question_type,
+                q.columns_config,
                 a.answer_text,
                 a.answer_numeric,
                 o.text AS selected_option
@@ -768,6 +851,12 @@ router.get('/:id/export', async (req, res) => {
                 if (row.question_type === 'rating_grid' && row.selected_option) {
                     value = `${row.selected_option}: ${row.answer_numeric}`;
                 }
+            } else if (row.question_type === 'matrix') {
+                const colLabel = (row.columns_config && Array.isArray(row.columns_config) && row.columns_config[row.answer_numeric])
+                    ? (row.columns_config[row.answer_numeric].label || `คอลัมน์ ${row.answer_numeric + 1}`)
+                    : `คอลัมน์ ${row.answer_numeric + 1}`;
+                value = `${row.selected_option || ''}: ${colLabel}`;
+                if (row.answer_text) value += ` (ระบุ: ${row.answer_text})`;
             } else if (['multiple_choice', 'single_choice', 'dropdown', 'quiz'].includes(row.question_type)) {
                 value = row.selected_option || row.answer_text || '';
                 if (row.answer_numeric != null && row.question_type === 'quiz') {
@@ -838,8 +927,8 @@ router.post('/:id/duplicate', async (req, res) => {
         for (const q of questions) {
             const newSectionId = q.section_id ? sectionIdMap[q.section_id] : null;
             const [qResult] = await connection.query(
-                'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [newSectionId, newFormId, q.text, q.type, q.is_required, q.order_index, q.image_url, q.score ?? null, q.is_suggestion ?? 0]
+                'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion, columns_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [newSectionId, newFormId, q.text, q.type, q.is_required, q.order_index, q.image_url, q.score ?? null, q.is_suggestion ?? 0, q.columns_config ? (typeof q.columns_config === 'string' ? q.columns_config : JSON.stringify(q.columns_config)) : null]
             );
             const newQId = qResult.insertId;
 
@@ -920,13 +1009,16 @@ router.put('/:id', async (req, res) => {
                     for (let qIndex = 0; qIndex < section.questions.length; qIndex++) {
                         const question = section.questions[qIndex];
 
+                        const columnsConfigJson = (question.type === 'matrix' && Array.isArray(question.columns_config))
+                            ? JSON.stringify(question.columns_config)
+                            : null;
                         const [qResult] = await connection.execute(
-                            'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion, quiz_label_style) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                            [sectionId, formId, question.text, question.type, question.is_required !== false, qIndex, question.image_url || null, question.score != null ? parseFloat(question.score) : null, question.is_suggestion ? 1 : 0, question.quiz_label_style || 'abc']
+                            'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion, quiz_label_style, columns_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                            [sectionId, formId, question.text, question.type, question.is_required !== false, qIndex, question.image_url || null, question.score != null ? parseFloat(question.score) : null, question.is_suggestion ? 1 : 0, question.quiz_label_style || 'abc', columnsConfigJson]
                         );
                         const questionId = qResult.insertId;
 
-                        if (['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'quiz', 'choice_suggestion'].includes(question.type) && question.options && Array.isArray(question.options)) {
+                        if (['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'quiz', 'choice_suggestion', 'matrix'].includes(question.type) && question.options && Array.isArray(question.options)) {
                             for (let oIndex = 0; oIndex < question.options.length; oIndex++) {
                                 const opt = question.options[oIndex];
                                 const optScore = (typeof opt === 'object' && opt.score != null) ? parseFloat(opt.score) : null;
