@@ -47,7 +47,7 @@ export default function RootLayout({ children }) {
           zIndex={1600}
           showAtBottom={false}
         />
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} forcedTheme="light" disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
           <Providers>
             {children}
           </Providers>

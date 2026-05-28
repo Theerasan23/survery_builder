@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Bell, User, LogOut } from 'lucide-react';
+import { User, LogOut } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useSession, signOut } from 'next-auth/react';
 import { useIdleTimeout } from '@/hooks/useIdleTimeout';
@@ -16,10 +16,6 @@ export default function Navbar({ title }) {
 
             <div className="flex items-center gap-4">
                 <ThemeToggle />
-                <button className="relative p-2 text-neutral-500 hover:text-neutral-800 dark:hover:text-white transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800">
-                    <Bell className="w-5 h-5" />
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-neutral-900"></span>
-                </button>
 
                 <Link href="/admin/profile" className="flex items-center gap-3 pl-4 border-l border-neutral-200 dark:border-neutral-800 hover:opacity-80 transition-opacity" title="แก้ไขโปรไฟล์">
                     <div className="w-9 h-9 rounded-full bg-[#21304A] flex items-center justify-center text-white shadow-lg">

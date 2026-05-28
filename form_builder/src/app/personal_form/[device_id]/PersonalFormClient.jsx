@@ -339,8 +339,8 @@ export default function PersonalFormClient({ deviceId }) {
 
                         {/* Col 2: Title text + Photo */}
                         <div className="flex flex-col items-center shrink-0 w-[55%] md:w-[58%] gap-3 md:gap-5">
-                            <p className="font-black text-center text-xl md:text-4xl leading-snug" style={{ background: 'linear-gradient(135deg, #0d9e8a, #38bdf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-                                แบบประเมิน ความพึงพอใจ
+                            <p className="font-black text-center text-xl md:text-4xl leading-snug text-slate-900 dark:text-white">
+                                ประเมินความพึงพอใจผู้ให้บริการ
                             </p>
                             <div className="w-full rounded-2xl p-2 md:p-3 border border-neutral-100 shadow-xl md:shadow-2xl shadow-sky-200/40 md:shadow-sky-300/40" style={{ background: 'linear-gradient(135deg, #e0f7fa 0%, #e3f2fd 100%)' }}>
                                 {photoSrc ? (

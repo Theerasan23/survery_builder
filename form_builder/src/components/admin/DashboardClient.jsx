@@ -209,12 +209,17 @@ export default function DashboardClient({ initialData = null }) {
     const [data, setData] = useState(initialData);
     const [loading, setLoading] = useState(false);
     const [realtimeCount, setRealtimeCount] = useState(0);
-    const [lastUpdate, setLastUpdate] = useState(initialData ? new Date() : null);
+    const [lastUpdate, setLastUpdate] = useState(null);
     const [justUpdated, setJustUpdated] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
     const activePreset = PRESETS.find(p => p.from === from && p.to === to);
     const prevResponseCount = useRef(initialData?.total_responses ?? null);
+
+    // Set initial lastUpdate after mount to avoid SSR/CSR hydration mismatch on time
+    useEffect(() => {
+        if (initialData) setLastUpdate(new Date());
+    }, [initialData]);
 
     const load = useCallback(async (f = from, t = to) => {
         setLoading(true);
