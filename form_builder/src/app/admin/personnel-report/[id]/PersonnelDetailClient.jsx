@@ -126,6 +126,47 @@ export default function PersonnelDetailClient({ personnelId, initialFrom, initia
             const name = `${personnel.first_name} ${personnel.last_name}`;
             const period = periodLabel(from, to);
 
+            const XLSX = await import('xlsx');
+            const wb = XLSX.utils.book_new();
+
+            // Sheet 1: ราย record — 1 แถวต่อการประเมิน 1 ครั้ง คำถามเป็นคอลัมน์
+            const questionCols = [];
+            responses.forEach(r => r.answers.forEach(a => {
+                if (a.question_type === 'heading') return;
+                if (!questionCols.includes(a.question_text)) questionCols.push(a.question_text);
+            }));
+
+            const recordRows = [['ชื่อ-นามสกุล', 'ครั้งที่', 'วันที่', 'แบบฟอร์ม', ...questionCols, 'คะแนนเฉลี่ย']];
+            responses.forEach((resp, ri) => {
+                const byQ = {};
+                const ratings = [];
+                resp.answers.forEach(a => {
+                    let val = '';
+                    if (a.question_type === 'rating' && a.answer_numeric != null) {
+                        val = a.answer_numeric;
+                        ratings.push(a.answer_numeric);
+                    } else if (a.answer_text) {
+                        val = a.answer_text;
+                    } else if (a.option_text) {
+                        val = a.option_text;
+                    }
+                    if (val === '' || val == null) return;
+                    byQ[a.question_text] = byQ[a.question_text] === undefined ? val : `${byQ[a.question_text]}, ${val}`;
+                });
+                recordRows.push([
+                    name,
+                    responses.length - ri,
+                    formatDateTime(resp.submitted_at),
+                    resp.form_title || '',
+                    ...questionCols.map(q => byQ[q] ?? ''),
+                    ratings.length ? +(ratings.reduce((s, v) => s + v, 0) / ratings.length).toFixed(2) : '',
+                ]);
+            });
+            const wsRecords = XLSX.utils.aoa_to_sheet(recordRows);
+            wsRecords['!cols'] = [{ wch: 25 }, { wch: 7 }, { wch: 20 }, { wch: 30 }, ...questionCols.map(() => ({ wch: 30 })), { wch: 12 }];
+            XLSX.utils.book_append_sheet(wb, wsRecords, 'รายการประเมิน');
+
+            // Sheet 2: สรุปรายข้อ (จำนวนครั้ง + คะแนนเฉลี่ยต่อข้อ)
             const stats = new Map();
             responses.forEach(resp => resp.answers.forEach(a => {
                 if (a.question_type === 'rating' && a.answer_numeric != null) {
@@ -136,24 +177,15 @@ export default function PersonnelDetailClient({ personnelId, initialFrom, initia
                 }
             }));
 
-            if (stats.size === 0) {
-                alert('ยังไม่มีคะแนนประเมินสำหรับ export');
-                return;
+            if (stats.size > 0) {
+                const summaryRows = [['ชื่อ-นามสกุล', 'ช่วงเวลา', 'รายการประเมิน', 'จำนวนครั้งที่ประเมิน', 'คะแนนเฉลี่ย']];
+                stats.forEach((s, q) => {
+                    summaryRows.push([name, period, q, s.count, +(s.sum / s.count).toFixed(2)]);
+                });
+                const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+                wsSummary['!cols'] = [{ wch: 25 }, { wch: 24 }, { wch: 45 }, { wch: 18 }, { wch: 12 }];
+                XLSX.utils.book_append_sheet(wb, wsSummary, 'สรุปรายข้อ');
             }
-
-            const rows = [...stats.entries()].map(([q, s]) => ({
-                'ชื่อ-นามสกุล': name,
-                'ช่วงเวลา': period,
-                'รายการประเมิน': q,
-                'จำนวนครั้งที่ประเมิน': s.count,
-                'คะแนนเฉลี่ย': +(s.sum / s.count).toFixed(2),
-            }));
-
-            const XLSX = await import('xlsx');
-            const ws = XLSX.utils.json_to_sheet(rows);
-            ws['!cols'] = [{ wch: 25 }, { wch: 24 }, { wch: 45 }, { wch: 18 }, { wch: 12 }];
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'รายงานบุคลากร');
             const suffix = from || to ? `_${from || 'start'}_${to || 'now'}` : '';
             XLSX.writeFile(wb, `personnel_${personnel.first_name}_${personnel.last_name}${suffix}.xlsx`);
         } catch (e) {
