@@ -273,46 +273,101 @@ export default function AnalyticsClient({ formId }) {
             const XLSX = await import('xlsx');
             const wb = XLSX.utils.book_new();
 
-            // Summary Sheet
+            // Sheet 1: สรุปภาพรวม
             const summaryData = [
-                ['Metric', 'Value'],
-                ['Form Title', data.form_title],
-                ['Date Range', `${from} - ${to}`],
-                ['Total Responses', data.total_responses],
-                ['Total Questions', totalQuestions],
-                ['Grand Total Score', grandTotalScore],
-                ['Grand Average Score', grandAvgScore],
-                ['Rating %', ratingPct],
+                ['รายการ', 'ค่า'],
+                ['แบบฟอร์ม', data.form_title || ''],
+                ['ช่วงเวลา', `${from} ถึง ${to}`],
+                ['จำนวนผู้ตอบ', data.total_responses ?? 0],
+                ['จำนวนคำถามทั้งหมด', totalQuestions],
+                ['คะแนนรวมทั้งหมด', +grandTotalScore.toFixed(2)],
+                ['คะแนนเฉลี่ยรวม', grandAvgScore != null ? +grandAvgScore.toFixed(2) : '-'],
+                ['% รวม Rating', ratingPct != null ? `${ratingPct.toFixed(1)}%` : '-'],
+                ['คะแนนเฉลี่ย Quiz', quizAvg != null ? +quizAvg.toFixed(2) : '-'],
+                ['คะแนนเฉลี่ยตัวเลือก + ข้อเสนอแนะ', suggAvg != null ? +suggAvg.toFixed(2) : '-'],
             ];
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryData), 'Summary');
+            const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+            wsSummary['!cols'] = [{ wch: 30 }, { wch: 45 }];
+            XLSX.utils.book_append_sheet(wb, wsSummary, 'สรุปภาพรวม');
 
-            // Questions Sheet
-            const questionData = [
-                ['Question Text', 'Type', 'Answers', 'Total Score', 'Average Score'],
-                ...questions.map(q => [
+            // Sheet 2: รายข้อคำถาม
+            const qRows = [['ลำดับ', 'คำถาม', 'ประเภท', 'จำนวนคำตอบ', 'คะแนนรวม', 'คะแนนเฉลี่ย']];
+            let qNo = 0;
+            questions.forEach(q => {
+                const isHeading = q.question_type === 'heading';
+                qRows.push([
+                    isHeading ? '' : ++qNo,
                     q.question_text,
-                    q.question_type,
-                    q.total_answers,
-                    q.total_score,
-                    q.average_score
-                ])
-            ];
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(questionData), 'Questions');
+                    q.question_type.replace(/_/g, ' '),
+                    isHeading ? '' : (q.total_answers || 0),
+                    q.total_score != null ? +parseFloat(q.total_score).toFixed(2) : '',
+                    q.average_score != null ? +Number(q.average_score).toFixed(2) : '',
+                ]);
+            });
+            const wsQ = XLSX.utils.aoa_to_sheet(qRows);
+            wsQ['!cols'] = [{ wch: 6 }, { wch: 60 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+            XLSX.utils.book_append_sheet(wb, wsQ, 'รายข้อคำถาม');
 
-            // Suggestions Sheet
+            // Sheet 3: การกระจายคะแนน Rating
+            const ratingDistQs = questions.filter(q => q.question_type === 'rating' && q.rating_distribution);
+            if (ratingDistQs.length > 0) {
+                const rows = [['คำถาม', 'ดีเยี่ยม (5)', 'ดี (4)', 'ปานกลาง (3)', 'น้อย (2)', 'น้อยมาก (1)', 'รวมคำตอบ', 'คะแนนเฉลี่ย']];
+                ratingDistQs.forEach(q => {
+                    const dist = q.rating_distribution || {};
+                    rows.push([
+                        q.question_text,
+                        dist[5] || 0,
+                        dist[4] || 0,
+                        dist[3] || 0,
+                        dist[2] || 0,
+                        dist[1] || 0,
+                        q.total_answers || 0,
+                        q.average_score != null ? +Number(q.average_score).toFixed(2) : '',
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                ws['!cols'] = [{ wch: 60 }, { wch: 11 }, { wch: 9 }, { wch: 12 }, { wch: 9 }, { wch: 12 }, { wch: 10 }, { wch: 12 }];
+                XLSX.utils.book_append_sheet(wb, ws, 'การกระจายคะแนน');
+            }
+
+            // Sheet 4: ตาราง Matrix
+            const matrixQs = questions.filter(q => q.question_type === 'matrix' && q.matrix_data && Array.isArray(q.columns_config));
+            if (matrixQs.length > 0) {
+                const rows = [['คำถาม', 'หัวข้อย่อย', 'ตัวเลือก', 'จำนวน']];
+                matrixQs.forEach(q => {
+                    (q.matrix_data.rows || []).forEach(r => {
+                        const rowCounts = q.matrix_data.counts?.[r.id] || {};
+                        q.columns_config.forEach((c, ci) => {
+                            rows.push([q.question_text, r.text, c.label || `คอลัมน์ ${ci + 1}`, rowCounts[ci] || 0]);
+                        });
+                    });
+                });
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                ws['!cols'] = [{ wch: 45 }, { wch: 40 }, { wch: 20 }, { wch: 10 }];
+                XLSX.utils.book_append_sheet(wb, ws, 'ตาราง Matrix');
+            }
+
+            // Sheet 5: ข้อเสนอแนะ
             if (totalSuggResponses > 0) {
-                const suggRows = [['Question', 'Options Selected', 'Text Response', 'Date']];
+                const suggRows = [['คำถาม', 'ตัวเลือกที่เลือก', 'ข้อความ', 'วันที่']];
                 allSuggQs.forEach(q => {
                     q.suggestions.forEach(s => {
                         const ansTexts = (s.option_texts || []).map(ot => (ot.option ? `[${ot.option}] ` : '') + ot.text).join(' | ');
                         const chosenOpts = (s.selected_options || []).join(', ');
-                        suggRows.push([q.question_text, chosenOpts, ansTexts, s.submitted_at]);
+                        suggRows.push([
+                            q.question_text,
+                            chosenOpts || '-',
+                            ansTexts || '-',
+                            new Date(s.submitted_at).toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                        ]);
                     });
                 });
-                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(suggRows), 'Suggestions');
+                const ws = XLSX.utils.aoa_to_sheet(suggRows);
+                ws['!cols'] = [{ wch: 50 }, { wch: 25 }, { wch: 60 }, { wch: 20 }];
+                XLSX.utils.book_append_sheet(wb, ws, 'ข้อเสนอแนะ');
             }
 
-            XLSX.writeFile(wb, `form_${formId}_analytics.xlsx`);
+            XLSX.writeFile(wb, `form_${formId}_analytics_${from}_${to}.xlsx`);
         } catch (e) {
             console.error('Excel export error:', e);
             alert('ไม่สามารถ export Excel ได้');
@@ -667,7 +722,7 @@ export default function AnalyticsClient({ formId }) {
             {!data && !loading && (
                 <div className="text-center py-16 text-neutral-400 dark:text-neutral-600">
                     <BarChart className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                    <p className="text-sm">กดปุ่ม "แสดงข้อมูล" เพื่อโหลดรายงาน</p>
+                    <p className="text-sm">กดปุ่ม &quot;แสดงข้อมูล&quot; เพื่อโหลดรายงาน</p>
                 </div>
             )}
         </div>

@@ -6,7 +6,7 @@ import {
     FileText, Users, BarChart2, MessageSquarePlus, TrendingUp,
     Search, RefreshCw, Calendar, CheckCircle2, Eye, ExternalLink,
     Activity, Zap, X, ChevronDown, ChevronRight, MessageSquare,
-    Sigma, CheckSquare, Star, FolderOpen,
+    Sigma, CheckSquare, Star, FolderOpen, FileSpreadsheet,
 } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -213,6 +213,7 @@ export default function DashboardClient({ initialData = null }) {
     const [justUpdated, setJustUpdated] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [exporting, setExporting] = useState(false);
     const activePreset = PRESETS.find(p => p.from === from && p.to === to);
     const prevResponseCount = useRef(initialData?.total_responses ?? null);
 
@@ -267,6 +268,95 @@ export default function DashboardClient({ initialData = null }) {
     const handleSearch = (e) => {
         e.preventDefault();
         load();
+    };
+
+    const handleExport = async () => {
+        if (!data) {
+            alert('ยังไม่มีข้อมูลสำหรับ export');
+            return;
+        }
+        setExporting(true);
+        try {
+            const XLSX = await import('xlsx');
+            const wb = XLSX.utils.book_new();
+            const period = `${from} ถึง ${to}`;
+
+            // Sheet 1: สรุปภาพรวม
+            const summary = [
+                ['รายการ', 'ค่า'],
+                ['ช่วงเวลา', period],
+                ['จำนวนผู้ตอบ', data.total_responses ?? 0],
+                ['แบบฟอร์มที่เปิดรับ', `${data.active_forms ?? 0}/${data.total_forms ?? 0}`],
+                ['คะแนนเฉลี่ยรวม', data.avg_score != null ? +Number(data.avg_score).toFixed(2) : '-'],
+                ['ยอดรวมคะแนน', data.total_score != null ? +Number(data.total_score).toFixed(2) : '-'],
+                ['จำนวนคำถามทั้งหมด', data.total_questions ?? '-'],
+                ['% รวม Rating', data.overall_rating_pct != null ? `${data.overall_rating_pct}%` : '-'],
+                ['ข้อเสนอแนะ', data.total_suggestions ?? 0],
+            ];
+            const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+            wsSummary['!cols'] = [{ wch: 24 }, { wch: 28 }];
+            XLSX.utils.book_append_sheet(wb, wsSummary, 'สรุปภาพรวม');
+
+            // Sheet 2: สรุปตามหัวข้อ
+            if (data.topics?.length) {
+                const rows = [['หัวข้อ', 'จำนวนแบบฟอร์ม', 'จำนวนผู้ตอบ']];
+                data.topics.forEach(t => rows.push([
+                    t.topic_name,
+                    Number(t.form_count) || 0,
+                    Number(t.total_responses) || 0,
+                ]));
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                ws['!cols'] = [{ wch: 45 }, { wch: 16 }, { wch: 14 }];
+                XLSX.utils.book_append_sheet(wb, ws, 'สรุปตามหัวข้อ');
+            }
+
+            // Sheet 3: สรุปแต่ละแบบฟอร์ม
+            const formRows = data.forms || [];
+            if (formRows.length) {
+                const rows = [['ชื่อแบบฟอร์ม', 'หัวข้อ', 'สถานะ', 'จำนวนผู้ตอบ', 'คะแนนเฉลี่ย']];
+                formRows.forEach(f => rows.push([
+                    f.title,
+                    f.topic_name || '-',
+                    f.is_active ? 'เปิดรับ' : 'ปิด',
+                    Number(f.response_count) || 0,
+                    f.avg_score != null ? +Number(f.avg_score).toFixed(2) : '-',
+                ]));
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                ws['!cols'] = [{ wch: 50 }, { wch: 30 }, { wch: 10 }, { wch: 12 }, { wch: 12 }];
+                XLSX.utils.book_append_sheet(wb, ws, 'สรุปแต่ละแบบฟอร์ม');
+            }
+
+            // Sheet 4: แนวโน้มรายวัน
+            if (data.trend?.length) {
+                const rows = [['วันที่', 'จำนวนผู้ตอบ']];
+                data.trend.forEach(d => rows.push([d.day, Number(d.count) || 0]));
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                ws['!cols'] = [{ wch: 14 }, { wch: 14 }];
+                XLSX.utils.book_append_sheet(wb, ws, 'แนวโน้มรายวัน');
+            }
+
+            // Sheet 5: ข้อเสนอแนะ
+            if (data.suggestions?.length) {
+                const rows = [['แบบฟอร์ม', 'คำถาม', 'ตัวเลือกที่เลือก', 'ข้อความ', 'วันที่']];
+                data.suggestions.forEach(s => rows.push([
+                    s.form_title,
+                    s.question_text,
+                    s.option_text || '-',
+                    s.answer_text || '-',
+                    s.submitted_at,
+                ]));
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                ws['!cols'] = [{ wch: 35 }, { wch: 40 }, { wch: 25 }, { wch: 50 }, { wch: 18 }];
+                XLSX.utils.book_append_sheet(wb, ws, 'ข้อเสนอแนะ');
+            }
+
+            XLSX.writeFile(wb, `dashboard_${from}_${to}.xlsx`);
+        } catch (e) {
+            console.error('Export failed:', e);
+            alert('Export ไม่สำเร็จ');
+        } finally {
+            setExporting(false);
+        }
     };
 
     const forms = data?.forms || [];
@@ -331,6 +421,14 @@ export default function DashboardClient({ initialData = null }) {
                         </button>
                     </div>
                     <div className="flex items-center gap-3 self-end pb-2 ml-auto">
+                        <button
+                            onClick={handleExport}
+                            disabled={exporting || !data}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-semibold transition-colors"
+                        >
+                            {exporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+                            Export Excel
+                        </button>
                         {lastUpdate && (
                             <span className="text-[10px] text-neutral-400">
                                 อัปเดต {lastUpdate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}

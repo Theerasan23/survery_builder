@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import {
     ArrowLeft, Star, Clock, ClipboardList, Calendar,
-    RefreshCw, Monitor, User, Building2, ChevronDown
+    RefreshCw, Monitor, User, Building2, ChevronDown,
+    FileSpreadsheet, Loader2
 } from 'lucide-react';
 
 // Use relative /api/ path so it works via ngrok too
@@ -29,6 +30,12 @@ const PRESETS = [
     { label: 'เดือนนี้',         from: () => startOfMonth(),  to: () => today() },
     { label: 'ทั้งหมด',          from: () => '',              to: () => '' },
 ];
+
+const periodLabel = (from, to) =>
+    from && to ? `${from} ถึง ${to}`
+    : from ? `ตั้งแต่ ${from}`
+    : to ? `ถึงวันที่ ${to}`
+    : 'ทั้งหมด';
 
 function formatDateTime(str) {
     if (!str) return '—';
@@ -63,6 +70,7 @@ export default function PersonnelDetailClient({ personnelId, initialFrom, initia
     const [to, setTo] = useState(initialTo);
     const [activePreset, setActivePreset] = useState(initialFrom || initialTo ? '' : 'ทั้งหมด');
     const [expandedIds, setExpandedIds] = useState(new Set());
+    const [exporting, setExporting] = useState(false);
 
     const fetchData = useCallback(async (f, t) => {
         setLoading(true);
@@ -106,6 +114,54 @@ export default function PersonnelDetailClient({ personnelId, initialFrom, initia
             next.has(id) ? next.delete(id) : next.add(id);
             return next;
         });
+    };
+
+    const handleExport = async () => {
+        if (!personnel || responses.length === 0) {
+            alert('ยังไม่มีข้อมูลสำหรับ export');
+            return;
+        }
+        setExporting(true);
+        try {
+            const name = `${personnel.first_name} ${personnel.last_name}`;
+            const period = periodLabel(from, to);
+
+            const stats = new Map();
+            responses.forEach(resp => resp.answers.forEach(a => {
+                if (a.question_type === 'rating' && a.answer_numeric != null) {
+                    const cur = stats.get(a.question_text) || { count: 0, sum: 0 };
+                    cur.count += 1;
+                    cur.sum += a.answer_numeric;
+                    stats.set(a.question_text, cur);
+                }
+            }));
+
+            if (stats.size === 0) {
+                alert('ยังไม่มีคะแนนประเมินสำหรับ export');
+                return;
+            }
+
+            const rows = [...stats.entries()].map(([q, s]) => ({
+                'ชื่อ-นามสกุล': name,
+                'ช่วงเวลา': period,
+                'รายการประเมิน': q,
+                'จำนวนครั้งที่ประเมิน': s.count,
+                'คะแนนเฉลี่ย': +(s.sum / s.count).toFixed(2),
+            }));
+
+            const XLSX = await import('xlsx');
+            const ws = XLSX.utils.json_to_sheet(rows);
+            ws['!cols'] = [{ wch: 25 }, { wch: 24 }, { wch: 45 }, { wch: 18 }, { wch: 12 }];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'รายงานบุคลากร');
+            const suffix = from || to ? `_${from || 'start'}_${to || 'now'}` : '';
+            XLSX.writeFile(wb, `personnel_${personnel.first_name}_${personnel.last_name}${suffix}.xlsx`);
+        } catch (e) {
+            console.error('Export failed:', e);
+            alert('Export ไม่สำเร็จ');
+        } finally {
+            setExporting(false);
+        }
     };
 
     // Summary stats
@@ -229,6 +285,14 @@ export default function PersonnelDetailClient({ personnelId, initialFrom, initia
                     <span className="ml-1 px-2 py-0.5 rounded-full bg-[#eef1f5] dark:bg-[#21304A]/10 text-[#21304A] dark:text-[#a1afc5] text-xs font-semibold">
                         {responses.length} ครั้ง
                     </span>
+                    <button
+                        onClick={handleExport}
+                        disabled={exporting || loading}
+                        className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-medium transition-colors"
+                    >
+                        {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+                        Export Excel
+                    </button>
                 </div>
 
                 {loading ? (

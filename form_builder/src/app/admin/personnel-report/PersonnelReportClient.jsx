@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { BarChart2, Users, Monitor, Star, Calendar, RefreshCw, ChevronRight, Briefcase } from 'lucide-react';
+import { BarChart2, Users, Monitor, Star, Calendar, RefreshCw, ChevronRight, Briefcase, FileSpreadsheet, Loader2 } from 'lucide-react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
 
@@ -42,6 +42,12 @@ const PRESETS = [
     { label: 'ทั้งหมด', from: () => '', to: () => '' },
 ];
 
+const periodLabel = (from, to) =>
+    from && to ? `${from} ถึง ${to}`
+    : from ? `ตั้งแต่ ${from}`
+    : to ? `ถึงวันที่ ${to}`
+    : 'ทั้งหมด';
+
 export default function PersonnelReportClient() {
     const router = useRouter();
     const [data, setData] = useState([]);
@@ -49,6 +55,7 @@ export default function PersonnelReportClient() {
     const [from, setFrom] = useState('');
     const [to, setTo] = useState('');
     const [activePreset, setActivePreset] = useState('ทั้งหมด');
+    const [exporting, setExporting] = useState(false);
 
     const fetchReport = useCallback(async (f, t) => {
         setLoading(true);
@@ -81,6 +88,83 @@ export default function PersonnelReportClient() {
         fetchReport(from, to);
     };
 
+    const handleExport = async () => {
+        if (data.length === 0) {
+            alert('ยังไม่มีข้อมูลสำหรับ export');
+            return;
+        }
+        setExporting(true);
+        try {
+            const params = {};
+            if (from) params.from = from;
+            if (to) params.to = to;
+            const period = periodLabel(from, to);
+
+            const responsesList = await Promise.all(
+                data.map(p =>
+                    p.response_count > 0
+                        ? axios.get(`${API}/personnel/${p.id}/responses`, { params }).then(r => r.data).catch(() => [])
+                        : Promise.resolve([])
+                )
+            );
+
+            const rows = [];
+            data.forEach((p, i) => {
+                const name = `${p.first_name} ${p.last_name}`;
+                const stats = new Map();
+                responsesList[i].forEach(resp => resp.answers.forEach(a => {
+                    if (a.question_type === 'rating' && a.answer_numeric != null) {
+                        const cur = stats.get(a.question_text) || { count: 0, sum: 0 };
+                        cur.count += 1;
+                        cur.sum += a.answer_numeric;
+                        stats.set(a.question_text, cur);
+                    }
+                }));
+                if (stats.size === 0) {
+                    rows.push({
+                        'ชื่อ-นามสกุล': name,
+                        'ช่วงเวลา': period,
+                        'รายการประเมิน': '—',
+                        'จำนวนครั้งที่ประเมิน': p.response_count || 0,
+                        'คะแนนเฉลี่ย': p.avg_score != null ? parseFloat(p.avg_score) : '—',
+                    });
+                } else {
+                    stats.forEach((s, q) => {
+                        rows.push({
+                            'ชื่อ-นามสกุล': name,
+                            'ช่วงเวลา': period,
+                            'รายการประเมิน': q,
+                            'จำนวนครั้งที่ประเมิน': s.count,
+                            'คะแนนเฉลี่ย': +(s.sum / s.count).toFixed(2),
+                        });
+                    });
+                }
+            });
+
+            rows.push({});
+            rows.push({
+                'ชื่อ-นามสกุล': 'รวมทั้งหมด',
+                'ช่วงเวลา': period,
+                'รายการประเมิน': 'จำนวนผู้ประเมินทั้งหมด / คะแนนเฉลี่ยรวม',
+                'จำนวนครั้งที่ประเมิน': totalResponses,
+                'คะแนนเฉลี่ย': overallAvg != null ? parseFloat(overallAvg) : '—',
+            });
+
+            const XLSX = await import('xlsx');
+            const ws = XLSX.utils.json_to_sheet(rows);
+            ws['!cols'] = [{ wch: 25 }, { wch: 24 }, { wch: 45 }, { wch: 18 }, { wch: 12 }];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'รายงานบุคลากร');
+            const suffix = from || to ? `_${from || 'start'}_${to || 'now'}` : '';
+            XLSX.writeFile(wb, `personnel_report${suffix}.xlsx`);
+        } catch (e) {
+            console.error('Export failed:', e);
+            alert('Export ไม่สำเร็จ');
+        } finally {
+            setExporting(false);
+        }
+    };
+
     const totalResponses = data.reduce((s, p) => s + (p.response_count || 0), 0);
     const withScore = data.filter(p => p.avg_score !== null);
     const overallAvg = withScore.length
@@ -101,13 +185,23 @@ export default function PersonnelReportClient() {
                             <p className="text-sm text-neutral-500 dark:text-neutral-400">สรุปคะแนนความพึงพอใจของแต่ละบุคลากรตามช่วงเวลา</p>
                         </div>
                     </div>
-                    <button
-                        onClick={() => router.push('/admin/personnel-report/by-job')}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium transition-colors shadow-sm shadow-orange-500/20"
-                    >
-                        <Briefcase className="w-4 h-4" />
-                        ดูรายงานตามงาน
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleExport}
+                            disabled={exporting || loading}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-medium transition-colors shadow-sm shadow-emerald-500/20"
+                        >
+                            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+                            Export Excel
+                        </button>
+                        <button
+                            onClick={() => router.push('/admin/personnel-report/by-job')}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium transition-colors shadow-sm shadow-orange-500/20"
+                        >
+                            <Briefcase className="w-4 h-4" />
+                            ดูรายงานตามงาน
+                        </button>
+                    </div>
                 </div>
             </div>
 

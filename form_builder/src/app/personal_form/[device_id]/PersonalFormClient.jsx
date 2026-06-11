@@ -8,11 +8,11 @@ import { CheckCircle, XCircle, Loader2, Phone, Star, ChevronRight, Maximize2, Mi
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL;
 
 const SATISFACTION_LEVELS = [
-    { value: 5, label: 'ดีเยี่ยม', emoji: '😄', color: 'emerald', bg: 'bg-emerald-50 dark:bg-emerald-500/10', border: 'border-emerald-300 dark:border-emerald-600', text: 'text-emerald-700 dark:text-emerald-400', ring: 'ring-emerald-400' },
-    { value: 4, label: 'ดี', emoji: '🙂', color: 'blue', bg: 'bg-blue-50 dark:bg-blue-500/10', border: 'border-blue-300 dark:border-blue-600', text: 'text-blue-700 dark:text-blue-400', ring: 'ring-blue-400' },
-    { value: 3, label: 'ปานกลาง', emoji: '😐', color: 'amber', bg: 'bg-amber-50 dark:bg-amber-500/10', border: 'border-amber-300 dark:border-amber-600', text: 'text-amber-700 dark:text-amber-400', ring: 'ring-amber-400' },
-    { value: 2, label: 'น้อย', emoji: '😕', color: 'orange', bg: 'bg-orange-50 dark:bg-orange-500/10', border: 'border-orange-300 dark:border-orange-600', text: 'text-orange-700 dark:text-orange-400', ring: 'ring-orange-400' },
     { value: 1, label: 'น้อยมาก', emoji: '😞', color: 'red', bg: 'bg-red-50 dark:bg-red-500/10', border: 'border-red-300 dark:border-red-600', text: 'text-red-700 dark:text-red-400', ring: 'ring-red-400' },
+    { value: 2, label: 'น้อย', emoji: '😕', color: 'orange', bg: 'bg-orange-50 dark:bg-orange-500/10', border: 'border-orange-300 dark:border-orange-600', text: 'text-orange-700 dark:text-orange-400', ring: 'ring-orange-400' },
+    { value: 3, label: 'ปานกลาง', emoji: '😐', color: 'amber', bg: 'bg-amber-50 dark:bg-amber-500/10', border: 'border-amber-300 dark:border-amber-600', text: 'text-amber-700 dark:text-amber-400', ring: 'ring-amber-400' },
+    { value: 4, label: 'ดี', emoji: '🙂', color: 'blue', bg: 'bg-blue-50 dark:bg-blue-500/10', border: 'border-blue-300 dark:border-blue-600', text: 'text-blue-700 dark:text-blue-400', ring: 'ring-blue-400' },
+    { value: 5, label: 'ดีเยี่ยม', emoji: '😄', color: 'emerald', bg: 'bg-emerald-50 dark:bg-emerald-500/10', border: 'border-emerald-300 dark:border-emerald-600', text: 'text-emerald-700 dark:text-emerald-400', ring: 'ring-emerald-400' },
 ];
 
 function imgUrl(url) {
