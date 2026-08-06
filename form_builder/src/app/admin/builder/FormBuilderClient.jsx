@@ -31,8 +31,11 @@ export default function FormBuilderClient({ editId = null, initialTopics = [] })
                 setFormOrganization(data.organization || 'สำนักงานสาธารณสุขจังหวัดนนทบุรี');
                 setTopicId(data.topic_id || '');
 
+                // db_id is the row's real primary key — it goes back on save so the API updates
+                // the existing rows instead of replacing them and losing their answers.
                 const mapQuestion = q => ({
                     id: `q-${q.id}`,
+                    db_id: q.id,
                     text: q.text,
                     type: q.type,
                     is_required: q.is_required,
@@ -41,11 +44,12 @@ export default function FormBuilderClient({ editId = null, initialTopics = [] })
                     score: q.score ?? null,
                     quiz_label_style: q.quiz_label_style || 'abc',
                     columns_config: q.columns_config || null,
-                    options: (q.options || []).map(o => ({ id: `o-${o.id}`, text: o.text, score: o.score ?? null }))
+                    options: (q.options || []).map(o => ({ id: `o-${o.id}`, db_id: o.id, text: o.text, score: o.score ?? null }))
                 });
 
                 const loadedSections = (data.sections || []).map(s => ({
                     id: `s-${s.id}`,
+                    db_id: s.id,
                     title: s.title,
                     description: s.description || '',
                     questions: (s.questions || []).map(mapQuestion)
@@ -99,9 +103,11 @@ export default function FormBuilderClient({ editId = null, initialTopics = [] })
                 description: formDescription,
                 organization: formOrganization || null,
                 sections: sections.map(s => ({
+                    db_id: s.db_id ?? null,
                     title: s.title,
                     description: s.description,
                     questions: s.questions.map((q, idx) => ({
+                        db_id: q.db_id ?? null,
                         text: q.text,
                         type: q.type,
                         is_required: q.is_required,
@@ -110,7 +116,9 @@ export default function FormBuilderClient({ editId = null, initialTopics = [] })
                         score: q.score ?? null,
                         quiz_label_style: q.quiz_label_style || 'abc',
                         order_index: idx,
-                        options: ['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'choice_suggestion', 'quiz', 'matrix'].includes(q.type) ? q.options : undefined,
+                        options: ['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'choice_suggestion', 'quiz', 'matrix'].includes(q.type)
+                            ? (q.options || []).map(o => (typeof o === 'object' && o !== null ? { db_id: o.db_id ?? null, text: o.text, score: o.score ?? null } : { db_id: null, text: o, score: null }))
+                            : undefined,
                         columns_config: q.type === 'matrix' ? (q.columns_config || []) : undefined,
                     }))
                 }))

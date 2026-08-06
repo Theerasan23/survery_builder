@@ -6,9 +6,9 @@ import { fetchDashboardStats } from './actions';
 export default async function AdminIndex() {
     const toBKK = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     const today = toBKK(new Date());
-    const firstOfMonth = today.slice(0, 8) + '01';
 
-    const initialData = await fetchDashboardStats(firstOfMonth, today);
+    // Default to "all data" so responses from previous months are not hidden by the date filter
+    const initialData = await fetchDashboardStats('2020-01-01', today);
 
     return <DashboardClient initialData={initialData} />;
 }

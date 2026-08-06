@@ -204,7 +204,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 const POLL_INTERVAL = 30000; // 30 seconds
 
 export default function DashboardClient({ initialData = null }) {
-    const [from, setFrom] = useState(FIRST_OF_MONTH);
+    const [from, setFrom] = useState('2020-01-01'); // default: 'ทั้งหมด' — show all data
     const [to, setTo]     = useState(TODAY);
     const [data, setData] = useState(initialData);
     const [loading, setLoading] = useState(false);
@@ -444,7 +444,9 @@ export default function DashboardClient({ initialData = null }) {
 
             {/* Summary Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard icon={Users}            label="จำนวนผู้ตอบ"       value={data?.total_responses ?? '-'}  sub={`ช่วง ${from} – ${to}`}   color="indigo" pulse={justUpdated} />
+                <StatCard icon={Users}            label="จำนวนผู้ตอบ"       value={data?.total_responses ?? '-'}
+                    sub={data ? `แบบสำรวจ ${data.form_responses ?? 0} · ประเมินบุคลากร ${data.personnel_responses ?? 0}` : `ช่วง ${from} – ${to}`}
+                    color="indigo" pulse={justUpdated} />
                 <StatCard icon={FileText}          label="แบบฟอร์มที่เปิดรับ" value={data ? `${data.active_forms}/${data.total_forms}` : '-'} sub="เปิดรับ / ทั้งหมด" color="emerald" />
                 <StatCard icon={TrendingUp}        label="คะแนนเฉลี่ยรวม"    value={data?.avg_score ? `${data.avg_score.toFixed(2)}` : '-'}   sub="จาก Rating / Grid"  color="amber" />
                 <div onClick={() => data?.suggestions?.length && setShowSuggestions(true)}

@@ -3,6 +3,9 @@ const router = express.Router();
 const pool = require('../db');
 const { v4: uuidv4 } = require('uuid');
 
+// Question types that carry a list of options
+const OPTION_QUESTION_TYPES = ['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'quiz', 'choice_suggestion', 'matrix'];
+
 // GET all forms
 router.get('/', async (req, res) => {
     try {
@@ -34,12 +37,17 @@ router.get('/dashboard-stats', async (req, res) => {
 
     let dateCondition = '';
     const dateParams = [];
-    if (from) { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?"; dateParams.push(from); }
-    if (to)   { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?"; dateParams.push(to); }
+    if (from) { dateCondition += " AND DATE(r.submitted_at) >= ?"; dateParams.push(from); }
+    if (to)   { dateCondition += " AND DATE(r.submitted_at) <= ?"; dateParams.push(to); }
 
     try {
-        const [[{ total_responses }]] = await pool.query(
-            `SELECT COUNT(*) as total_responses FROM responses r WHERE r.personnel_form_id IS NULL${dateCondition}`,
+        // Count both channels: survey forms and the personnel evaluation forms. The scores below
+        // stay scoped to survey forms, which is what the per-form and per-topic tables break down.
+        const [[{ total_responses, form_responses, personnel_responses }]] = await pool.query(
+            `SELECT COUNT(*) as total_responses,
+                    SUM(r.personnel_form_id IS NULL) as form_responses,
+                    SUM(r.personnel_form_id IS NOT NULL) as personnel_responses
+             FROM responses r WHERE 1=1${dateCondition}`,
             [...dateParams]
         );
         const [[{ active_forms }]] = await pool.query(`SELECT COUNT(*) as active_forms FROM forms WHERE is_active = 1`);
@@ -84,11 +92,11 @@ router.get('/dashboard-stats', async (req, res) => {
         const trendFrom = from || new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
         const trendTo   = to   || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
         const [trend] = await pool.query(`
-            SELECT DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) as day, COUNT(*) as count
+            -- formatted as a string so the day survives JSON transport unshifted
+            SELECT DATE_FORMAT(r.submitted_at, '%Y-%m-%d') as day, COUNT(*) as count
             FROM responses r
-            WHERE r.personnel_form_id IS NULL
-              AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?
-              AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?
+            WHERE DATE(r.submitted_at) >= ?
+              AND DATE(r.submitted_at) <= ?
             GROUP BY day ORDER BY day ASC
         `, [trendFrom, trendTo]);
 
@@ -107,7 +115,7 @@ router.get('/dashboard-stats', async (req, res) => {
                     THEN a.answer_text ELSE NULL END
                     ORDER BY a.id SEPARATOR ' | '
                 ) AS answer_text,
-                DATE_FORMAT(CONVERT_TZ(r.submitted_at,'+00:00','+07:00'), '%Y-%m-%d %H:%i') AS submitted_at
+                DATE_FORMAT(r.submitted_at, '%Y-%m-%d %H:%i') AS submitted_at
             FROM answers a
             JOIN responses r  ON a.response_id  = r.id
             JOIN questions q  ON a.question_id  = q.id
@@ -159,7 +167,10 @@ router.get('/dashboard-stats', async (req, res) => {
         `, [...dateParams]);
 
         res.json({
-            total_responses, active_forms, total_forms,
+            total_responses: Number(total_responses),
+            form_responses: Number(form_responses || 0),
+            personnel_responses: Number(personnel_responses || 0),
+            active_forms, total_forms,
             avg_score: avg_score ? Number(avg_score) : null,
             total_suggestions,
             total_score: Number(total_score),
@@ -186,8 +197,8 @@ router.get('/topic-analytics/:topicId', async (req, res) => {
 
     let dateCondition = '';
     const dateParams = [];
-    if (from) { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?"; dateParams.push(from); }
-    if (to)   { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?"; dateParams.push(to); }
+    if (from) { dateCondition += " AND DATE(r.submitted_at) >= ?"; dateParams.push(from); }
+    if (to)   { dateCondition += " AND DATE(r.submitted_at) <= ?"; dateParams.push(to); }
 
     // Parse formIds filter
     let formIdFilter = '';
@@ -259,7 +270,7 @@ router.get('/topic-analytics/:topicId', async (req, res) => {
                     THEN a.answer_text ELSE NULL END
                     ORDER BY a.id SEPARATOR ' | '
                 ) AS answer_text,
-                DATE_FORMAT(CONVERT_TZ(r.submitted_at,'+00:00','+07:00'), '%Y-%m-%d %H:%i') AS submitted_at
+                DATE_FORMAT(r.submitted_at, '%Y-%m-%d %H:%i') AS submitted_at
             FROM answers a
             JOIN responses r ON a.response_id = r.id
             JOIN questions q ON a.question_id = q.id
@@ -386,7 +397,7 @@ router.post('/', async (req, res) => {
                         const questionId = qResult.insertId;
 
                         // Insert Options
-                        if (['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'quiz', 'choice_suggestion', 'matrix'].includes(question.type) && question.options && Array.isArray(question.options)) {
+                        if (OPTION_QUESTION_TYPES.includes(question.type) && question.options && Array.isArray(question.options)) {
                             for (let oIndex = 0; oIndex < question.options.length; oIndex++) {
                                 const opt = question.options[oIndex];
                                 const optScore = (typeof opt === 'object' && opt.score != null) ? parseFloat(opt.score) : null;
@@ -433,6 +444,22 @@ router.post('/:id/responses', async (req, res) => {
         }
         const actualFormId = forms[0].id;
 
+        // Only accept answers whose question still belongs to this form. Someone who had the form
+        // open while an admin edited it will post question_ids that no longer exist; without this
+        // the FK error would roll the whole transaction back and their submission would be lost.
+        const questionIds = answers.map(a => a.question_id).filter(Boolean);
+        let validQuestionIds = new Set();
+        if (questionIds.length > 0) {
+            const [validQs] = await connection.query(
+                'SELECT id FROM questions WHERE form_id = ? AND id IN (?)',
+                [actualFormId, questionIds]
+            );
+            validQuestionIds = new Set(validQs.map(q => q.id));
+        }
+        if (validQuestionIds.size === 0) {
+            throw new Error('No answers matched a question on this form — the form may have just been edited. Please reload and submit again.');
+        }
+
         // If respondent_id is a device UUID, look up the device's current personnel_id
         let personnelId = null;
         if (respondent_id) {
@@ -454,7 +481,7 @@ router.post('/:id/responses', async (req, res) => {
 
         // Validate and Insert answers
         for (const ans of answers) {
-            if (!ans.question_id) continue;
+            if (!ans.question_id || !validQuestionIds.has(ans.question_id)) continue;
 
             // No strict numeric bounds — rating (1-5) is validated client-side;
             // choice options may carry arbitrary scores stored in answer_numeric.
@@ -526,8 +553,8 @@ router.get('/:id/questions-analytics', async (req, res) => {
 
     let dateCondition = '';
     const dateParams = [];
-    if (from) { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?"; dateParams.push(from); }
-    if (to)   { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?"; dateParams.push(to); }
+    if (from) { dateCondition += " AND DATE(r.submitted_at) >= ?"; dateParams.push(from); }
+    if (to)   { dateCondition += " AND DATE(r.submitted_at) <= ?"; dateParams.push(to); }
 
     try {
         const [[{ total_responses }]] = await pool.query(
@@ -965,72 +992,169 @@ router.put('/:id', async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // 1. Update Form
+        // 1. Update Form. The builder does not send is_active, so keep the current value —
+        //    defaulting to true here would silently re-open a form the admin had closed.
         await connection.query(
-            'UPDATE forms SET topic_id = ?, title = ?, description = ?, organization = ?, is_active = ? WHERE id = ?',
-            [topic_id || null, title, description || null, organization || null, is_active !== undefined ? is_active : true, formId]
+            'UPDATE forms SET topic_id = ?, title = ?, description = ?, organization = ?, is_active = COALESCE(?, is_active) WHERE id = ?',
+            [topic_id || null, title, description || null, organization || null, is_active === undefined ? null : is_active, formId]
         );
 
-        // A quick and safe approach for complex nested structures is to delete children and recreate
-        // This avoids complex differential updates manually. 
-        // We will delete previously attached sections (which cascades down if DB schema has CASCADE, 
-        // but let's do explicit deletion just to be safe if CASCADE isn't set.)
+        // Reconcile the structure in place instead of deleting and recreating it.
+        // Rows the builder sends back with a db_id are UPDATEd, new rows are INSERTed, and only
+        // rows the admin actually removed are DELETEd. Responses are never touched here: dropping
+        // and recreating questions would cascade away every answer ever submitted to this form.
+        const [existingSections] = await connection.query(
+            'SELECT id FROM sections WHERE form_id = ? ORDER BY order_index ASC, id ASC', [formId]
+        );
+        const [existingQuestions] = await connection.query(
+            'SELECT id, section_id FROM questions WHERE form_id = ? ORDER BY order_index ASC, id ASC', [formId]
+        );
+        const existingSectionIds = new Set(existingSections.map(s => s.id));
+        const existingQuestionIds = new Set(existingQuestions.map(q => q.id));
 
-        // Find existing question IDs to delete their options/answers safely
-        const [existingQs] = await connection.query('SELECT id FROM questions WHERE form_id = ?', [formId]);
-        if (existingQs.length > 0) {
-            const qIdsArr = existingQs.map(q => q.id);
-            // Clear answers
-            await connection.query('DELETE FROM answers WHERE question_id IN (?)', [qIdsArr]);
-            // Clear options
-            await connection.query('DELETE FROM options WHERE question_id IN (?)', [qIdsArr]);
+        let existingOptions = [];
+        if (existingQuestionIds.size > 0) {
+            const [opts] = await connection.query(
+                'SELECT id, question_id FROM options WHERE question_id IN (?) ORDER BY order_index ASC, id ASC',
+                [[...existingQuestionIds]]
+            );
+            existingOptions = opts;
         }
+        const existingOptionIds = new Set(existingOptions.map(o => o.id));
 
-        // Clear Responses associated with form (optional based on logic, but required if replacing structure)
-        await connection.query('DELETE FROM responses WHERE form_id = ?', [formId]);
-        // Clear Questions
-        await connection.query('DELETE FROM questions WHERE form_id = ?', [formId]);
-        // Clear Sections
-        await connection.query('DELETE FROM sections WHERE form_id = ?', [formId]);
+        // Positional fallback for payloads that carry no db_id at all (e.g. a client built before
+        // db_id was sent) — without it every row would look new and its answers would be lost.
+        // It is all-or-nothing on purpose: in a payload that does use db_id, a freshly added row
+        // has none, and matching it by position would silently overwrite an existing row.
+        const sectionList = Array.isArray(sections) ? sections : [];
+        const payloadUsesDbIds = sectionList.some(s =>
+            Number(s?.db_id) > 0 ||
+            (Array.isArray(s?.questions) && s.questions.some(q =>
+                Number(q?.db_id) > 0 ||
+                (Array.isArray(q?.options) && q.options.some(o => Number(o?.db_id) > 0))
+            ))
+        );
 
-        // 2. Insert Sections and Questions (Recreate)
-        if (sections && Array.isArray(sections)) {
-            for (let sIndex = 0; sIndex < sections.length; sIndex++) {
-                const section = sections[sIndex];
+        const questionsBySection = new Map();
+        for (const q of existingQuestions) {
+            if (!questionsBySection.has(q.section_id)) questionsBySection.set(q.section_id, []);
+            questionsBySection.get(q.section_id).push(q.id);
+        }
+        const optionsByQuestion = new Map();
+        for (const o of existingOptions) {
+            if (!optionsByQuestion.has(o.question_id)) optionsByQuestion.set(o.question_id, []);
+            optionsByQuestion.get(o.question_id).push(o.id);
+        }
+        const resolveId = (dbId, fallbackId, validIds) => {
+            const explicit = Number(dbId);
+            if (validIds.has(explicit)) return explicit;
+            if (!payloadUsesDbIds && validIds.has(fallbackId)) return fallbackId;
+            return null;
+        };
 
-                let sectionId = null;
+        const keptSections = new Set();
+        const keptQuestions = new Set();
+        const keptOptions = new Set();
+
+        // 2. Upsert Sections and Questions
+        for (let sIndex = 0; sIndex < sectionList.length; sIndex++) {
+            const section = sectionList[sIndex];
+            const sectionDbId = resolveId(section.db_id, existingSections[sIndex]?.id, existingSectionIds);
+
+            let sectionId;
+            if (sectionDbId) {
+                await connection.execute(
+                    'UPDATE sections SET title = ?, description = ?, order_index = ? WHERE id = ? AND form_id = ?',
+                    [section.title || '', section.description || null, sIndex, sectionDbId, formId]
+                );
+                sectionId = sectionDbId;
+            } else {
                 const [sectionResult] = await connection.execute(
                     'INSERT INTO sections (form_id, title, description, order_index) VALUES (?, ?, ?, ?)',
                     [formId, section.title || '', section.description || null, sIndex]
                 );
                 sectionId = sectionResult.insertId;
+            }
+            keptSections.add(sectionId);
 
-                if (section.questions && Array.isArray(section.questions)) {
-                    for (let qIndex = 0; qIndex < section.questions.length; qIndex++) {
-                        const question = section.questions[qIndex];
+            const questionList = Array.isArray(section.questions) ? section.questions : [];
+            for (let qIndex = 0; qIndex < questionList.length; qIndex++) {
+                const question = questionList[qIndex];
 
-                        const columnsConfigJson = (question.type === 'matrix' && Array.isArray(question.columns_config))
-                            ? JSON.stringify(question.columns_config)
-                            : null;
-                        const [qResult] = await connection.execute(
-                            'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion, quiz_label_style, columns_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                            [sectionId, formId, question.text, question.type, question.is_required !== false, qIndex, question.image_url || null, question.score != null ? parseFloat(question.score) : null, question.is_suggestion ? 1 : 0, question.quiz_label_style || 'abc', columnsConfigJson]
+                const columnsConfigJson = (question.type === 'matrix' && Array.isArray(question.columns_config))
+                    ? JSON.stringify(question.columns_config)
+                    : null;
+                const questionFields = [
+                    question.text, question.type, question.is_required !== false, qIndex,
+                    question.image_url || null,
+                    question.score != null ? parseFloat(question.score) : null,
+                    question.is_suggestion ? 1 : 0,
+                    question.quiz_label_style || 'abc',
+                    columnsConfigJson,
+                ];
+                const questionDbId = resolveId(
+                    question.db_id, (questionsBySection.get(sectionDbId) || [])[qIndex], existingQuestionIds
+                );
+
+                let questionId;
+                if (questionDbId) {
+                    await connection.execute(
+                        'UPDATE questions SET section_id = ?, text = ?, type = ?, is_required = ?, order_index = ?, image_url = ?, score = ?, is_suggestion = ?, quiz_label_style = ?, columns_config = ? WHERE id = ? AND form_id = ?',
+                        [sectionId, ...questionFields, questionDbId, formId]
+                    );
+                    questionId = questionDbId;
+                } else {
+                    const [qResult] = await connection.execute(
+                        'INSERT INTO questions (section_id, form_id, text, type, is_required, order_index, image_url, score, is_suggestion, quiz_label_style, columns_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [sectionId, formId, ...questionFields]
+                    );
+                    questionId = qResult.insertId;
+                }
+                keptQuestions.add(questionId);
+
+                if (OPTION_QUESTION_TYPES.includes(question.type) && Array.isArray(question.options)) {
+                    for (let oIndex = 0; oIndex < question.options.length; oIndex++) {
+                        const opt = question.options[oIndex];
+                        const isObj = typeof opt === 'object' && opt !== null;
+                        const optText = isObj ? (opt.text || '') : opt;
+                        const optScore = (isObj && opt.score != null) ? parseFloat(opt.score) : null;
+                        const optionDbId = resolveId(
+                            isObj ? opt.db_id : undefined,
+                            (optionsByQuestion.get(questionDbId) || [])[oIndex],
+                            existingOptionIds
                         );
-                        const questionId = qResult.insertId;
 
-                        if (['multiple_choice', 'single_choice', 'dropdown', 'rating_grid', 'quiz', 'choice_suggestion', 'matrix'].includes(question.type) && question.options && Array.isArray(question.options)) {
-                            for (let oIndex = 0; oIndex < question.options.length; oIndex++) {
-                                const opt = question.options[oIndex];
-                                const optScore = (typeof opt === 'object' && opt.score != null) ? parseFloat(opt.score) : null;
-                                await connection.execute(
-                                    'INSERT INTO options (question_id, text, order_index, score) VALUES (?, ?, ?, ?)',
-                                    [questionId, opt.text || opt, oIndex, optScore]
-                                );
-                            }
+                        if (optionDbId) {
+                            await connection.execute(
+                                'UPDATE options SET question_id = ?, text = ?, order_index = ?, score = ? WHERE id = ?',
+                                [questionId, optText, oIndex, optScore, optionDbId]
+                            );
+                            keptOptions.add(optionDbId);
+                        } else {
+                            const [oResult] = await connection.execute(
+                                'INSERT INTO options (question_id, text, order_index, score) VALUES (?, ?, ?, ?)',
+                                [questionId, optText, oIndex, optScore]
+                            );
+                            keptOptions.add(oResult.insertId);
                         }
                     }
                 }
             }
+        }
+
+        // 3. Drop only what the admin removed in the builder. Their answers cascade away with them,
+        //    which is intended — everything still on the form keeps its history.
+        const removedQuestions = [...existingQuestionIds].filter(id => !keptQuestions.has(id));
+        if (removedQuestions.length > 0) {
+            await connection.query('DELETE FROM questions WHERE id IN (?) AND form_id = ?', [removedQuestions, formId]);
+        }
+        const removedSections = [...existingSectionIds].filter(id => !keptSections.has(id));
+        if (removedSections.length > 0) {
+            await connection.query('DELETE FROM sections WHERE id IN (?) AND form_id = ?', [removedSections, formId]);
+        }
+        const removedOptions = [...existingOptionIds].filter(id => !keptOptions.has(id));
+        if (removedOptions.length > 0) {
+            await connection.query('DELETE FROM options WHERE id IN (?)', [removedOptions]);
         }
 
         await connection.commit();
@@ -1107,8 +1231,8 @@ router.get('/:id/report', async (req, res) => {
 
         let dateCondition = '';
         const dateParams = [];
-        if (from) { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) >= ?"; dateParams.push(from); }
-        if (to)   { dateCondition += " AND DATE(CONVERT_TZ(r.submitted_at,'+00:00','+07:00')) <= ?"; dateParams.push(to); }
+        if (from) { dateCondition += " AND DATE(r.submitted_at) >= ?"; dateParams.push(from); }
+        if (to)   { dateCondition += " AND DATE(r.submitted_at) <= ?"; dateParams.push(to); }
 
         const [[{ total }]] = await pool.query(
             `SELECT COUNT(*) as total FROM responses r WHERE r.form_id = ?${dateCondition}`,

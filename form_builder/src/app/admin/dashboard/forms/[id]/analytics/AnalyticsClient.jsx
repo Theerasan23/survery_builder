@@ -11,7 +11,8 @@ import Link from 'next/link';
 
 // Use Bangkok timezone (UTC+7) for date defaults
 const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
-const FIRST_OF_MONTH = TODAY.slice(0, 8) + '01';
+// Default to "all data" so responses from previous months are not hidden by the date filter
+const ALL_TIME_START = '2020-01-01';
 
 function RatingDistribution({ dist, total }) {
     return (
@@ -118,7 +119,7 @@ function SuggestionCard({ s, idx }) {
 }
 
 export default function AnalyticsClient({ formId }) {
-    const [from, setFrom] = useState(FIRST_OF_MONTH);
+    const [from, setFrom] = useState(ALL_TIME_START);
     const [to, setTo] = useState(TODAY);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);

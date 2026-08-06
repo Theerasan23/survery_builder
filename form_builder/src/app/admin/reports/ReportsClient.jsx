@@ -38,11 +38,12 @@ function buildQuestions(rows) {
 
 // Compute once at module load — only updates on remount (e.g. new day)
 const DEFAULT_TODAY = new Date().toISOString().split('T')[0];
-const DEFAULT_FIRST_OF_MONTH = DEFAULT_TODAY.slice(0, 8) + '01';
+// Default to "all data" so responses from previous months are not hidden by the date filter
+const ALL_TIME_START = '2020-01-01';
 
 export default function ReportsClient({ forms }) {
     const [formId, setFormId] = useState('');
-    const [from, setFrom] = useState(DEFAULT_FIRST_OF_MONTH);
+    const [from, setFrom] = useState(ALL_TIME_START);
     const [to, setTo] = useState(DEFAULT_TODAY);
     const [report, setReport] = useState(null);
     const [loading, setLoading] = useState(false);

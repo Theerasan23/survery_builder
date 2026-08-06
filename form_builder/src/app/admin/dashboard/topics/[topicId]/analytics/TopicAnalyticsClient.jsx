@@ -60,7 +60,7 @@ function ScoreBar({ value, max = 5 }) {
 }
 
 export default function TopicAnalyticsClient({ topicId }) {
-    const [from, setFrom] = useState(FIRST_OF_MONTH);
+    const [from, setFrom] = useState('2020-01-01'); // default: 'ทั้งหมด' — show all data
     const [to, setTo] = useState(TODAY);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
