@@ -26,19 +26,35 @@ else
     printf '\n' >&2
 fi
 
-if docker inspect "$CONTAINER" >/dev/null 2>&1; then
+# Reaching the Docker socket often needs sudo; fall back to it before giving up,
+# otherwise a permission error looks exactly like "container not found".
+DOCKER=""
+if docker info >/dev/null 2>&1; then
+    DOCKER="docker"
+elif command -v docker >/dev/null 2>&1; then
+    echo "Docker needs sudo on this host — you may be asked for your sudo password."
+    if sudo docker info >/dev/null 2>&1; then
+        DOCKER="sudo docker"
+    fi
+fi
+
+if [ -n "$DOCKER" ] && $DOCKER inspect "$CONTAINER" >/dev/null 2>&1; then
     MODE=docker
     echo "MySQL in Docker container: $CONTAINER"
+elif [ -n "$DOCKER" ]; then
+    echo "Docker is reachable but there is no container named '$CONTAINER'."
+    echo "Pick the MySQL one from:  $DOCKER ps --format '{{.Names}}\t{{.Image}}'"
+    exit 1
 else
     MODE=host
-    echo "No container named '$CONTAINER' — using MySQL on this host."
+    echo "Docker is not reachable — using MySQL on this host."
 fi
 echo
 
 # Run a snippet where mysql/mysqlbinlog live, with the password supplied via MYSQL_PWD.
 run() {
     if [ "$MODE" = docker ]; then
-        docker exec -e MYSQL_PWD="$PW" "$CONTAINER" sh -c "$1" 2>/dev/null
+        $DOCKER exec -e MYSQL_PWD="$PW" "$CONTAINER" sh -c "$1" 2>/dev/null
     else
         MYSQL_PWD="$PW" sh -c "$1" 2>/dev/null
     fi
@@ -97,7 +113,7 @@ if [ "$TOTAL" -gt 0 ]; then
     echo
     echo "Recoverable. Save the binlogs off this host before they expire:"
     if [ "$MODE" = docker ]; then
-        echo "   docker exec $CONTAINER sh -c 'tar cf - ${BASENAME}.0*' > binlogs-\$(date +%F).tar"
+        echo "   $DOCKER exec $CONTAINER sh -c 'tar cf - ${BASENAME}.0*' > binlogs-\$(date +%F).tar"
     else
         echo "   tar cf binlogs-\$(date +%F).tar ${BASENAME}.0*"
     fi
