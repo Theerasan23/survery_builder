@@ -41,13 +41,10 @@ router.get('/dashboard-stats', async (req, res) => {
     if (to)   { dateCondition += " AND DATE(r.submitted_at) <= ?"; dateParams.push(to); }
 
     try {
-        // Count both channels: survey forms and the personnel evaluation forms. The scores below
-        // stay scoped to survey forms, which is what the per-form and per-topic tables break down.
-        const [[{ total_responses, form_responses, personnel_responses }]] = await pool.query(
-            `SELECT COUNT(*) as total_responses,
-                    SUM(r.personnel_form_id IS NULL) as form_responses,
-                    SUM(r.personnel_form_id IS NOT NULL) as personnel_responses
-             FROM responses r WHERE 1=1${dateCondition}`,
+        // Survey forms only — personnel evaluations have their own report page, and this figure
+        // has to agree with the per-form and per-topic tables below.
+        const [[{ total_responses }]] = await pool.query(
+            `SELECT COUNT(*) as total_responses FROM responses r WHERE r.personnel_form_id IS NULL${dateCondition}`,
             [...dateParams]
         );
         const [[{ active_forms }]] = await pool.query(`SELECT COUNT(*) as active_forms FROM forms WHERE is_active = 1`);
@@ -95,7 +92,8 @@ router.get('/dashboard-stats', async (req, res) => {
             -- formatted as a string so the day survives JSON transport unshifted
             SELECT DATE_FORMAT(r.submitted_at, '%Y-%m-%d') as day, COUNT(*) as count
             FROM responses r
-            WHERE DATE(r.submitted_at) >= ?
+            WHERE r.personnel_form_id IS NULL
+              AND DATE(r.submitted_at) >= ?
               AND DATE(r.submitted_at) <= ?
             GROUP BY day ORDER BY day ASC
         `, [trendFrom, trendTo]);
@@ -167,10 +165,7 @@ router.get('/dashboard-stats', async (req, res) => {
         `, [...dateParams]);
 
         res.json({
-            total_responses: Number(total_responses),
-            form_responses: Number(form_responses || 0),
-            personnel_responses: Number(personnel_responses || 0),
-            active_forms, total_forms,
+            total_responses, active_forms, total_forms,
             avg_score: avg_score ? Number(avg_score) : null,
             total_suggestions,
             total_score: Number(total_score),
