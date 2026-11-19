@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { internalAuthHeaders } from '@/lib/internalAuth';
 
 const INTERNAL = process.env.INTERNAL_API_URL || 'http://localhost:3001/api';
 
@@ -7,7 +8,7 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     const res = await fetch(`${INTERNAL}/users/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await internalAuthHeaders()) },
         body: JSON.stringify(body),
     });
     const data = await res.json();

@@ -11,6 +11,29 @@ import useConfirmModal from '@/hooks/useConfirmModal';
 const OTHER_OPTION_RE = /อื่นๆ|โปรดระบุ|ข้อเสนอเพื่อปรับปรุง|ควรเพิ่มเติม|ไม่เหมาะสม/i;
 const isOtherOption = (text) => OTHER_OPTION_RE.test(text || '');
 
+// Smiley faces for the 1–5 rating question (UI only — stored value is still the number)
+const SMILEY_FACES = {
+    1: { color: '#ef4444', mouth: <path d="M20 47 Q32 35 44 47" fill="none" /> },
+    2: { color: '#f97316', mouth: <path d="M22 45 Q32 39 42 45" fill="none" /> },
+    3: { color: '#eab308', mouth: <path d="M22 43 L42 43" fill="none" /> },
+    4: { color: '#84cc16', mouth: <path d="M22 40 Q32 48 42 40" fill="none" /> },
+    5: { color: '#22c55e', mouth: <path d="M19 38 Q32 56 45 38 Z" fill="#1f2937" /> },
+};
+
+function SmileyFace({ score, className = '' }) {
+    const face = SMILEY_FACES[score];
+    return (
+        <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+            <circle cx="32" cy="32" r="29" fill={face.color} />
+            <circle cx="23" cy="26" r="3.5" fill="#1f2937" />
+            <circle cx="41" cy="26" r="3.5" fill="#1f2937" />
+            <g stroke="#1f2937" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                {face.mouth}
+            </g>
+        </svg>
+    );
+}
+
 export default function FormClient({ uuid, initialForm, initialError, initialOrgSettings }) {
     // form is server-fetched and never mutated client-side
     const form = initialForm;
@@ -373,13 +396,17 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                                                 checked={parseInt(val) === score}
                                                 onChange={() => handleAnswerChange(q.id, score)}
                                                 className="sr-only"
+                                                aria-label={`${score} คะแนน`}
                                             />
-                                            <div className={`w-full aspect-square rounded flex flex-col items-center justify-center gap-1 transition-all duration-200 border-2 font-bold text-lg cursor-pointer select-none
+                                            <div className={`w-full aspect-square rounded flex items-center justify-center transition-all duration-200 border-2 cursor-pointer select-none
                                                 ${parseInt(val) === score
-                                                    ? 'border-slate-700 bg-slate-700 text-white shadow scale-105'
-                                                    : 'border-neutral-200 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400 hover:border-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                                                    ? 'border-slate-700 dark:border-slate-300 bg-slate-100 dark:bg-slate-700 shadow scale-105'
+                                                    : 'border-neutral-200 dark:border-neutral-700 hover:border-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
                                                 }`}>
-                                                {score}
+                                                <SmileyFace
+                                                    score={score}
+                                                    className={`w-3/5 h-3/5 transition-all duration-200 ${val && parseInt(val) !== score ? 'opacity-40 grayscale' : ''}`}
+                                                />
                                             </div>
                                         </label>
                                     ))}

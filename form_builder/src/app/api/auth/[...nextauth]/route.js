@@ -9,17 +9,22 @@ export const authOptions = {
                 username: { label: "Username", type: "text", placeholder: "admin" },
                 password: { label: "Password", type: "password" }
             },
-            async authorize(credentials) {
+            async authorize(credentials, req) {
                 if (!credentials?.username || !credentials?.password) {
                     throw new Error("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน");
                 }
 
                 const apiUrl = process.env.INTERNAL_API_URL || "http://localhost:3001/api";
+                // Pass the browser's IP on so the API rate-limits per client, not per Next.js server
+                const forwardedFor = req?.headers?.["x-forwarded-for"];
 
                 try {
                     const res = await fetch(`${apiUrl}/users/login`, {
                         method: 'POST',
-                        headers: { "Content-Type": "application/json" },
+                        headers: {
+                            "Content-Type": "application/json",
+                            ...(forwardedFor ? { "X-Forwarded-For": forwardedFor } : {}),
+                        },
                         body: JSON.stringify({
                             username: credentials.username,
                             password: credentials.password,

@@ -2,6 +2,8 @@
  * Server-side only API functions.
  * ใช้ INTERNAL_API_URL เพื่อ fetch จาก server โดยตรง ไม่ผ่าน browser (ไม่มีปัญหา CORS)
  */
+import { internalAuthHeaders } from './internalAuth';
+
 const INTERNAL_URL = process.env.INTERNAL_API_URL || 'http://localhost:3001/api';
 
 async function apiFetch(path, options = {}) {
@@ -21,6 +23,6 @@ export const serverGetForms          = ()         => apiFetch('/forms');
 export const serverGetFormById       = (id)       => apiFetch(`/forms/${id}`);
 export const serverGetFormTopics     = ()         => apiFetch('/form-topics');
 export const serverGetOptionSets     = ()         => apiFetch('/option-sets');
-export const serverGetUsers          = ()         => apiFetch('/users');
+export const serverGetUsers          = async ()   => apiFetch('/users', { headers: await internalAuthHeaders() });
 export const serverGetAnalytics      = (id)       => apiFetch(`/forms/${id}/questions-analytics`);
 export const serverGetResponsesDetail = (id)      => apiFetch(`/forms/${id}/responses-detail`);

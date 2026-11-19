@@ -1,5 +1,7 @@
 'use server';
 
+import { internalAuthHeaders } from './internalAuth';
+
 const INTERNAL_URL = process.env.INTERNAL_API_URL || 'http://localhost:3001/api';
 
 async function apiFetch(path, options = {}) {
@@ -83,15 +85,22 @@ export async function deleteFormTopic(id) {
     return apiFetch(`/form-topics/${id}`, { method: 'DELETE' });
 }
 
-// ─── Users ───
+// ─── Users ─── (the API checks the session's user: admin, or self for get/update)
 export async function getUsers() {
-    const { data } = await apiFetch('/users');
-    return data || [];
+    const { ok, data } = await apiFetch('/users', { headers: await internalAuthHeaders() });
+    return ok && Array.isArray(data) ? data : [];
+}
+
+export async function getUser(id) {
+    const { ok, data } = await apiFetch(`/users/${id}`, { headers: await internalAuthHeaders() });
+    if (!ok) throw new Error(data?.error || 'โหลดข้อมูลผู้ใช้ไม่สำเร็จ');
+    return data;
 }
 
 export async function createUser(payload) {
     return apiFetch('/users', {
         method: 'POST',
+        headers: await internalAuthHeaders(),
         body: JSON.stringify(payload),
     });
 }
@@ -99,6 +108,7 @@ export async function createUser(payload) {
 export async function updateUser(id, payload) {
     return apiFetch(`/users/${id}`, {
         method: 'PUT',
+        headers: await internalAuthHeaders(),
         body: JSON.stringify(payload),
     });
 }

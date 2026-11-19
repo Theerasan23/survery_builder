@@ -3,13 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { updateUser } from '@/lib/actions';
+import { getUser, updateUser } from '@/lib/actions';
 import { User, Save, Loader2, Eye, EyeOff, KeyRound, ArrowLeft } from 'lucide-react';
 import ConfirmModal from '@/components/ConfirmModal';
 import useConfirmModal from '@/hooks/useConfirmModal';
-import axios from 'axios';
-
-const API = process.env.NEXT_PUBLIC_API_URL;
 
 export default function ProfileClient() {
     const { data: session, status, update: updateSession } = useSession();
@@ -32,8 +29,7 @@ export default function ProfileClient() {
         (async () => {
             try {
                 // Fetch specifically the current user
-                const res = await axios.get(`${API}/users/${session.user.id}`);
-                const me = res.data;
+                const me = await getUser(session.user.id);
                 if (me) {
                     setFormData({
                         first_name: me.first_name || '',
