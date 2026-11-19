@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { submitFormResponse } from '@/lib/actions';
-import { ChevronRight, ChevronLeft, Send, CheckCircle2, FileText, Star } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Send, CheckCircle2, FileText, Star, Angry, Frown, Meh, Smile, Laugh } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import ConfirmModal from '@/components/ConfirmModal';
 import useConfirmModal from '@/hooks/useConfirmModal';
@@ -12,27 +12,14 @@ const OTHER_OPTION_RE = /อื่นๆ|โปรดระบุ|ข้อเ�
 const isOtherOption = (text) => OTHER_OPTION_RE.test(text || '');
 
 // Smiley faces for the 1–5 rating question (UI only — stored value is still the number)
+// Gray until selected, then takes the score's colour.
 const SMILEY_FACES = {
-    1: { label: 'น้อยที่สุด', color: '#ef4444', mouth: <path d="M20 47 Q32 35 44 47" fill="none" /> },
-    2: { label: 'น้อย', color: '#f97316', mouth: <path d="M22 45 Q32 39 42 45" fill="none" /> },
-    3: { label: 'ปานกลาง', color: '#eab308', mouth: <path d="M22 43 L42 43" fill="none" /> },
-    4: { label: 'มาก', color: '#84cc16', mouth: <path d="M22 40 Q32 48 42 40" fill="none" /> },
-    5: { label: 'มากที่สุด', color: '#22c55e', mouth: <path d="M19 38 Q32 56 45 38 Z" fill="#1f2937" /> },
+    1: { label: 'น้อยที่สุด', Icon: Angry, color: '#ef4444', bg: '#fef2f2' },
+    2: { label: 'น้อย', Icon: Frown, color: '#f97316', bg: '#fff7ed' },
+    3: { label: 'ปานกลาง', Icon: Meh, color: '#eab308', bg: '#fefce8' },
+    4: { label: 'มาก', Icon: Smile, color: '#84cc16', bg: '#f7fee7' },
+    5: { label: 'มากที่สุด', Icon: Laugh, color: '#22c55e', bg: '#f0fdf4' },
 };
-
-function SmileyFace({ score, className = '' }) {
-    const face = SMILEY_FACES[score];
-    return (
-        <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
-            <circle cx="32" cy="32" r="29" fill={face.color} />
-            <circle cx="23" cy="26" r="3.5" fill="#1f2937" />
-            <circle cx="41" cy="26" r="3.5" fill="#1f2937" />
-            <g stroke="#1f2937" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                {face.mouth}
-            </g>
-        </svg>
-    );
-}
 
 export default function FormClient({ uuid, initialForm, initialError, initialOrgSettings }) {
     // form is server-fetched and never mutated client-side
@@ -387,7 +374,10 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                         {q.type === 'rating' && (
                             <div className="py-2">
                                 <div className="flex items-stretch gap-2 sm:gap-3">
-                                    {[1, 2, 3, 4, 5].map(score => (
+                                    {[1, 2, 3, 4, 5].map(score => {
+                                        const face = SMILEY_FACES[score];
+                                        const selected = parseInt(val) === score;
+                                        return (
                                         <label key={score} className="flex-1 cursor-pointer">
                                             <input
                                                 type="radio"
@@ -396,26 +386,27 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                                                 checked={parseInt(val) === score}
                                                 onChange={() => handleAnswerChange(q.id, score)}
                                                 className="sr-only"
-                                                aria-label={`${score} คะแนน (${SMILEY_FACES[score].label})`}
+                                                aria-label={`${score} คะแนน (${face.label})`}
                                             />
-                                            <div className={`w-full h-full rounded flex flex-col items-center justify-center gap-1 px-1 py-3 sm:py-4 transition-all duration-200 border-2 cursor-pointer select-none
-                                                ${parseInt(val) === score
-                                                    ? 'border-slate-700 dark:border-slate-300 bg-slate-100 dark:bg-slate-700 shadow scale-105'
-                                                    : 'border-neutral-200 dark:border-neutral-700 hover:border-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                                                }`}>
-                                                <SmileyFace
-                                                    score={score}
-                                                    className={`w-10 h-10 sm:w-16 sm:h-16 transition-all duration-200 ${val && parseInt(val) !== score ? 'opacity-40 grayscale' : ''}`}
-                                                />
-                                                <span className={`text-base sm:text-lg font-bold leading-none mt-1 ${parseInt(val) === score ? 'text-slate-800 dark:text-white' : 'text-neutral-500 dark:text-neutral-400'}`}>
+                                            <div
+                                                className={`w-full h-full rounded-xl flex flex-col items-center justify-center gap-1 px-1 py-3 sm:py-4 transition-all duration-200 border-2 cursor-pointer select-none
+                                                    ${selected
+                                                        ? 'shadow scale-105'
+                                                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 text-slate-400 dark:text-slate-500 hover:border-slate-300 hover:text-slate-500 dark:hover:border-slate-600'
+                                                    }`}
+                                                style={selected ? { borderColor: face.color, backgroundColor: face.bg, color: face.color } : undefined}
+                                            >
+                                                <face.Icon className="w-8 h-8 sm:w-11 sm:h-11" strokeWidth={1.75} aria-hidden="true" />
+                                                <span className="text-lg sm:text-2xl font-semibold leading-none mt-1">
                                                     {score}
                                                 </span>
-                                                <span className={`text-[10px] sm:text-xs leading-tight text-center whitespace-nowrap ${parseInt(val) === score ? 'text-slate-700 dark:text-slate-200 font-medium' : 'text-neutral-400'}`}>
-                                                    {SMILEY_FACES[score].label}
+                                                <span className={`text-[10px] sm:text-xs leading-tight text-center whitespace-nowrap ${selected ? 'font-medium' : ''}`}>
+                                                    {face.label}
                                                 </span>
                                             </div>
                                         </label>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
