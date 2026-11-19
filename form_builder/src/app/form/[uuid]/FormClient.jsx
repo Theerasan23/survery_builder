@@ -13,11 +13,11 @@ const isOtherOption = (text) => OTHER_OPTION_RE.test(text || '');
 
 // Smiley faces for the 1–5 rating question (UI only — stored value is still the number)
 const SMILEY_FACES = {
-    1: { color: '#ef4444', mouth: <path d="M20 47 Q32 35 44 47" fill="none" /> },
-    2: { color: '#f97316', mouth: <path d="M22 45 Q32 39 42 45" fill="none" /> },
-    3: { color: '#eab308', mouth: <path d="M22 43 L42 43" fill="none" /> },
-    4: { color: '#84cc16', mouth: <path d="M22 40 Q32 48 42 40" fill="none" /> },
-    5: { color: '#22c55e', mouth: <path d="M19 38 Q32 56 45 38 Z" fill="#1f2937" /> },
+    1: { label: 'น้อยที่สุด', color: '#ef4444', mouth: <path d="M20 47 Q32 35 44 47" fill="none" /> },
+    2: { label: 'น้อย', color: '#f97316', mouth: <path d="M22 45 Q32 39 42 45" fill="none" /> },
+    3: { label: 'ปานกลาง', color: '#eab308', mouth: <path d="M22 43 L42 43" fill="none" /> },
+    4: { label: 'มาก', color: '#84cc16', mouth: <path d="M22 40 Q32 48 42 40" fill="none" /> },
+    5: { label: 'มากที่สุด', color: '#22c55e', mouth: <path d="M19 38 Q32 56 45 38 Z" fill="#1f2937" /> },
 };
 
 function SmileyFace({ score, className = '' }) {
@@ -386,7 +386,7 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                         {/* ── Rating ── */}
                         {q.type === 'rating' && (
                             <div className="py-2">
-                                <div className="flex items-center gap-2 sm:gap-3">
+                                <div className="flex items-stretch gap-2 sm:gap-3">
                                     {[1, 2, 3, 4, 5].map(score => (
                                         <label key={score} className="flex-1 cursor-pointer">
                                             <input
@@ -396,24 +396,26 @@ export default function FormClient({ uuid, initialForm, initialError, initialOrg
                                                 checked={parseInt(val) === score}
                                                 onChange={() => handleAnswerChange(q.id, score)}
                                                 className="sr-only"
-                                                aria-label={`${score} คะแนน`}
+                                                aria-label={`${score} คะแนน (${SMILEY_FACES[score].label})`}
                                             />
-                                            <div className={`w-full aspect-square rounded flex items-center justify-center transition-all duration-200 border-2 cursor-pointer select-none
+                                            <div className={`w-full h-full rounded flex flex-col items-center justify-center gap-1 px-1 py-3 sm:py-4 transition-all duration-200 border-2 cursor-pointer select-none
                                                 ${parseInt(val) === score
                                                     ? 'border-slate-700 dark:border-slate-300 bg-slate-100 dark:bg-slate-700 shadow scale-105'
                                                     : 'border-neutral-200 dark:border-neutral-700 hover:border-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'
                                                 }`}>
                                                 <SmileyFace
                                                     score={score}
-                                                    className={`w-3/5 h-3/5 transition-all duration-200 ${val && parseInt(val) !== score ? 'opacity-40 grayscale' : ''}`}
+                                                    className={`w-10 h-10 sm:w-16 sm:h-16 transition-all duration-200 ${val && parseInt(val) !== score ? 'opacity-40 grayscale' : ''}`}
                                                 />
+                                                <span className={`text-base sm:text-lg font-bold leading-none mt-1 ${parseInt(val) === score ? 'text-slate-800 dark:text-white' : 'text-neutral-500 dark:text-neutral-400'}`}>
+                                                    {score}
+                                                </span>
+                                                <span className={`text-[10px] sm:text-xs leading-tight text-center whitespace-nowrap ${parseInt(val) === score ? 'text-slate-700 dark:text-slate-200 font-medium' : 'text-neutral-400'}`}>
+                                                    {SMILEY_FACES[score].label}
+                                                </span>
                                             </div>
                                         </label>
                                     ))}
-                                </div>
-                                <div className="flex justify-between mt-2 px-1">
-                                    <span className="text-xs text-neutral-400">น้อยที่สุด</span>
-                                    <span className="text-xs text-neutral-400">มากที่สุด</span>
                                 </div>
                             </div>
                         )}
